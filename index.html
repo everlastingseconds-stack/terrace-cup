@@ -38,6 +38,10 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:9px 8px;
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:14px}.stats .card{margin:0;text-align:center}
 .ph{height:170px;width:100%;object-fit:cover;border-radius:8px;border:1px solid var(--gold)}
 #toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--gold);color:#000;padding:10px 18px;border-radius:6px;font-weight:600;display:none;z-index:9}
+.av{border-radius:50%;object-fit:cover;background:#1a1a1a;border:2px solid var(--gold);flex:none}
+.chk{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+.ck{display:flex;align-items:center;gap:8px;margin:0;padding:8px 10px;background:#0a0a0a;border:1px solid var(--line);border-radius:6px;color:var(--text);font-size:15px;cursor:pointer}
+.ck input{width:auto;accent-color:var(--red)}
 </style>
 </head>
 <body>
@@ -46,7 +50,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:9px 8px;
 <script>
 // ====== CONFIG: paste your Supabase publishable key (starts with sb_publishable_) ======
 const SB_URL = "https://idoiovurdiwxcubxjacg.supabase.co";
-const SB_KEY = "sb_publishable_u_5tQWR8t6tOapmyDpVtYQ_xcHbp_EQ";
+const SB_KEY = "PASTE_YOUR_PUBLISHABLE_KEY_HERE";
 // =======================================================================================
 const sb = supabase.createClient(SB_URL, SB_KEY);
 const $ = s => document.querySelector(s);
@@ -59,6 +63,11 @@ const pub = p => sb.storage.from("public-assets").getPublicUrl(p).data.publicUrl
 function toast(m){const t=$("#toast");t.textContent=m;t.style.display="block";clearTimeout(toast.h);toast.h=setTimeout(()=>t.style.display="none",2800)}
 const chk = r => { if(r.error){toast(r.error.message);return false} return true };
 
+const SPORTS=["Cricket","Football","Pickleball","Badminton","Chess","Table tennis","Darts","Carrom"];
+const avatar=(p,sz=44)=>p?`<img class="av" style="width:${sz}px;height:${sz}px" src="${sb.storage.from("player-photos").getPublicUrl(p).data.publicUrl}" alt="">`:`<div class="av" style="width:${sz}px;height:${sz}px"></div>`;
+function shrink(file,max=900){return new Promise((res,rej)=>{const img=new Image(),u=URL.createObjectURL(file);
+  img.onload=()=>{const k=Math.min(1,max/Math.max(img.width,img.height)),c=document.createElement("canvas");c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);c.getContext("2d").drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(u);c.toBlob(b=>b?res(b):rej(new Error("Could not read the photo")),"image/jpeg",.85)};
+  img.onerror=()=>rej(new Error("Could not read the photo. Try a JPG or PNG."));img.src=u})}
 const TABS=[["reg","Player registration"],["ev","Event registration"],["auc","Auction"],["draw","Draw"],["score","Scoring"],["part","Participants"],["bud","Budget and audit"],["gal","Gallery"],["fb","Feedback"]];
 const soon=(t,n)=>`<h2>${t}</h2><div class="note">${n}</div>`;
 
@@ -81,11 +90,12 @@ async function load(){
 async function render(){
   const app=$("#app");
   if(!S.user){app.innerHTML=loginHTML();return}
+  if(!S.player) S.tab="reg";
   app.innerHTML=`<header><div class="logo">Terrace <b>Cup</b></div><div class="ctl">
     <select data-chg="ed">${S.eds.map(x=>`<option value="${x.id}" ${S.ed&&x.id===S.ed.id?"selected":""}>${E(x.name)}${x.is_active?" (live)":" (archive)"}</option>`).join("")}</select>
     <span>${E(S.user.email)} · ${S.role==="super"?"Super admin":S.role==="admin"?"Admin":"Viewer"}</span>
     <button class="s o" data-act="out">Sign out</button></div></header>
-    <nav>${TABS.filter(t=>t[0]!=="bud"||isAdm()).map(t=>`<button data-tab="${t[0]}" class="${t[0]===S.tab?"on":""}">${t[1]}</button>`).join("")}</nav>
+    ${S.player?`<nav>${TABS.filter(t=>t[0]!=="bud"||isAdm()).map(t=>`<button data-tab="${t[0]}" class="${t[0]===S.tab?"on":""}">${t[1]}</button>`).join("")}</nav>`:""}
     <main id="main"><p class="m">Loading…</p></main>`;
   let h; try{h=await V[S.tab]()}catch(err){h=`<div class="note">${E(err.message)}</div>`}
   const m=$("#main"); if(m) m.innerHTML=h;
@@ -107,14 +117,24 @@ function loginHTML(){
 
 // ---------- views ----------
 const V={};
-V.reg=async()=>{const p=S.player||{};return `<h2>Player registration</h2>
-<p class="m">${S.player?"Your profile is saved. You can update it here.":"Sign up once. Your profile carries over to every Terrace Cup edition."}</p>
-<form class="card" data-f="player"><div class="g2">
-<div><label>Full name</label><input name="full_name" required value="${E(p.full_name)}"></div>
-<div><label>Phone</label><input name="phone" value="${E(p.phone)}"></div>
-<div><label>Area or city</label><input name="area" value="${E(p.area)}"></div>
-<div><label>Playing level</label><select name="level">${["Beginner","Intermediate","Advanced"].map(l=>`<option ${p.level===l?"selected":""}>${l}</option>`).join("")}</select></div></div>
-<button>${S.player?"Save changes":"Register as a player"}</button></form>`};
+V.reg=async()=>{
+  const p=S.player||{}, first=!S.player, mine=p.sports||[];
+  return `<h2>${first?"Welcome! Complete your registration":"Your player profile"}</h2>
+<p class="m">${first?"This is a one-time sign-up. Your profile carries over to every Terrace Cup edition.":"Update your details any time."}</p>
+<form class="card" data-f="player">
+<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">${avatar(p.photo_path,96)}
+<div style="flex:1;min-width:220px"><label>Close-up photo ${first?"(required)":"(leave empty to keep your current one)"}</label><input type="file" name="photo" accept="image/*" ${first?"required":""}></div></div>
+<div class="g2">
+<div><label>First name</label><input name="first_name" required value="${E(p.first_name)}"></div>
+<div><label>Last name</label><input name="last_name" required value="${E(p.last_name)}"></div>
+<div><label>Email ID</label><input name="email" type="email" required value="${E(p.email||S.user.email)}"></div>
+<div><label>Phone number</label><input name="phone" type="tel" required pattern="[0-9+ \\-]{10,15}" title="10 to 15 digits" value="${E(p.phone)}"></div></div>
+<label>Sports you are interested in</label>
+<div class="chk">${SPORTS.map(s=>`<label class="ck"><input type="checkbox" name="sports" value="${s}" ${mine.includes(s)?"checked":""}> ${s}</label>`).join("")}</div>
+<label>Other sports you would like us to add (optional)</label>
+<textarea name="other_sports" rows="2" placeholder="e.g. Volleyball, Carrom doubles">${E(p.other_sports)}</textarea>
+<button>${first?"Complete registration":"Save changes"}</button></form>`;
+};
 
 V.ev=async()=>{
   if(!S.ed) return `<p class="m">No edition has been created yet.</p>`;
@@ -153,8 +173,8 @@ V.part=async()=>{
   if(!S.ed) return `<p class="m">No edition yet.</p>`;
   const [ev,rows]=await Promise.all([sb.from("events").select("id,name").eq("edition_id",S.ed.id),sb.from("participants").select("*").eq("edition_id",S.ed.id).order("id")]);
   const nm=new Map((ev.data||[]).map(e=>[e.id,e.name]));
-  return `<h2>Participants, ${E(S.ed.name)}</h2><div class="card wrap"><table><tr><th>Player</th><th>Area</th><th>Event</th><th>Status</th></tr>
-  ${(rows.data||[]).map(r=>`<tr><td>${E(r.full_name)}</td><td>${E(r.area)}</td><td>${E(nm.get(r.event_id))}</td><td><span class="chip ${r.status}">${r.status}</span></td></tr>`).join("")||`<tr><td colspan="4" class="m">No registrations yet.</td></tr>`}</table></div>`;
+  return `<h2>Participants, ${E(S.ed.name)}</h2><div class="card wrap"><table><tr><th>Player</th><th>Event</th><th>Status</th></tr>
+  ${(rows.data||[]).map(r=>`<tr><td style="display:flex;gap:10px;align-items:center">${avatar(r.photo_path,36)}${E(r.full_name)}</td><td>${E(nm.get(r.event_id))}</td><td><span class="chip ${r.status}">${r.status}</span></td></tr>`).join("")||`<tr><td colspan="3" class="m">No registrations yet.</td></tr>`}</table></div>`;
 };
 
 V.bud=async()=>{
@@ -204,8 +224,19 @@ const F={
     render();
   },
   async player(fd){
-    const r=await sb.from("players").upsert({user_id:S.user.id,full_name:fd.get("full_name").trim(),email:S.user.email,phone:fd.get("phone"),area:fd.get("area"),level:fd.get("level")},{onConflict:"user_id"});
-    if(chk(r)){toast("Profile saved");S.tab="ev";await load()}
+    const sports=fd.getAll("sports");
+    if(!sports.length) return toast("Pick at least one sport");
+    let photo_path=S.player?.photo_path||null; const f=fd.get("photo");
+    if(f&&f.size){
+      const blob=await shrink(f), path=`${S.user.id}/avatar-${Date.now()}.jpg`;
+      if(!chk(await sb.storage.from("player-photos").upload(path,blob,{contentType:"image/jpeg"}))) return;
+      if(photo_path) sb.storage.from("player-photos").remove([photo_path]);
+      photo_path=path;
+    }
+    if(!photo_path) return toast("Please add a close-up photo");
+    const first=fd.get("first_name").trim(), last=fd.get("last_name").trim();
+    const r=await sb.from("players").upsert({user_id:S.user.id,first_name:first,last_name:last,full_name:first+" "+last,email:fd.get("email").trim(),phone:fd.get("phone").trim(),sports,other_sports:fd.get("other_sports").trim()||null,photo_path},{onConflict:"user_id"});
+    if(chk(r)){toast("Registration saved");S.tab="ev";await load()}
   },
   async reg(fd){
     let proof=null; const f=fd.get("proof");
@@ -238,7 +269,7 @@ const A={
   async delfb(id){if(chk(await sb.from("feedback").delete().eq("id",id)))render()}
 };
 document.addEventListener("submit",async e=>{const f=e.target.dataset.f;if(!f)return;e.preventDefault();const b=e.target.querySelector("button");if(b)b.disabled=true;
-  try{await F[f](new FormData(e.target))}finally{if(b)b.disabled=false}});
+  try{await F[f](new FormData(e.target))}catch(err){toast(err.message)}finally{if(b)b.disabled=false}});
 document.addEventListener("click",e=>{
   const a=e.target.closest("[data-act]");if(a){e.preventDefault();A[a.dataset.act](a.dataset.id);return}
   const t=e.target.closest("[data-tab]");if(t){S.tab=t.dataset.tab;render();return}
