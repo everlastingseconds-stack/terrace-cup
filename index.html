@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Terrace Cup</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.108.2/dist/umd/supabase.js"></script>
+<style>
+:root{--bg:#000;--panel:#111;--line:#2e2418;--red:#d1122f;--red2:#ff3a55;--gold:#d9a521;--gold2:#f3cf6b;--text:#f4ede0;--muted:#a69a85;--ok:#3fbf7f;color-scheme:dark}
+*{box-sizing:border-box}
+html,body{background:#000}
+body{margin:0;color:var(--text);font:15px/1.5 Barlow,system-ui,sans-serif;min-height:100vh;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+h2,h3{font-family:"Barlow Condensed",Impact,sans-serif;margin:0 0 8px}
+h2{font-size:30px;color:var(--gold2)}h3{font-size:21px}
+header{background:linear-gradient(180deg,#1b0207,#000);border-bottom:2px solid var(--gold);padding:12px 16px;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}
+.logo{font:700 32px "Barlow Condensed",Impact,sans-serif;color:var(--gold2)}.logo b{color:var(--red2)}
+.ctl{display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:13px;color:var(--muted)}.ctl select{width:auto}
+select,input,textarea{background:#0a0a0a;color:var(--text);border:1px solid var(--line);border-radius:6px;padding:9px 10px;font:inherit;width:100%}
+select:focus,input:focus,textarea:focus,button:focus-visible{outline:2px solid var(--gold)}
+nav{display:flex;overflow-x:auto;border-bottom:1px solid var(--line);background:#0a0a0a;padding:0 8px}
+nav button{background:none;border:0;border-bottom:3px solid transparent;color:var(--muted);padding:13px 14px;margin:0;border-radius:0;white-space:nowrap}
+nav button.on{color:var(--gold2);border-color:var(--red)}
+main{max-width:1000px;margin:0 auto;padding:20px 16px 60px}
+.card{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--red);border-radius:8px;padding:16px;margin-bottom:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
+.g2{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+label{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
+button{background:var(--red);color:#fff;border:0;border-radius:6px;padding:10px 18px;font:600 15px Barlow,sans-serif;cursor:pointer;margin-top:12px}
+button.g{background:var(--gold);color:#000}button.o{background:none;border:1px solid var(--gold);color:var(--gold2)}button.s{padding:6px 12px;font-size:13px;margin:0 6px 0 0}
+.m{color:var(--muted)}.gold{color:var(--gold2);font:700 26px "Barlow Condensed",sans-serif}
+.note{background:#241a05;border:1px solid var(--gold);color:var(--gold2);padding:10px 14px;border-radius:6px;margin-bottom:14px}
+.chip{display:inline-block;padding:2px 10px;border-radius:99px;font-size:13px;font-weight:600}
+.pending{background:#3a2d08;color:var(--gold2)}.verified{background:#0f2e1f;color:var(--ok)}.rejected{background:#3a0a12;color:var(--red2)}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line)}th{color:var(--gold)}
+.wrap{overflow-x:auto}summary{cursor:pointer;color:var(--gold2);font-weight:600}a{color:var(--gold2)}
+.login{max-width:400px;margin:8vh auto;padding:0 16px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:14px}.stats .card{margin:0;text-align:center}
+.ph{height:170px;width:100%;object-fit:cover;border-radius:8px;border:1px solid var(--gold)}
+#toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--gold);color:#000;padding:10px 18px;border-radius:6px;font-weight:600;display:none;z-index:9}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="toast"></div>
+<script>
+// ====== CONFIG: paste your Supabase publishable key (starts with sb_publishable_) ======
+const SB_URL = "https://idoiovurdiwxcubxjacg.supabase.co";
+const SB_KEY = "sb_publishable_u_5tQWR8t6tOapmyDpVtYQ_xcHbp_EQ";
+// =======================================================================================
+const sb = supabase.createClient(SB_URL, SB_KEY);
+const $ = s => document.querySelector(s);
+const E = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const R = n => "₹" + Number(n).toLocaleString("en-IN");
+const S = {user:null, role:"viewer", player:null, eds:[], ed:null, tab:"reg", mode:"in", otp:"email", email:"", msg:""};
+const isAdm = () => S.role !== "viewer";
+const live = () => S.ed && S.ed.is_active;
+const pub = p => sb.storage.from("public-assets").getPublicUrl(p).data.publicUrl;
+function toast(m){const t=$("#toast");t.textContent=m;t.style.display="block";clearTimeout(toast.h);toast.h=setTimeout(()=>t.style.display="none",2800)}
+const chk = r => { if(r.error){toast(r.error.message);return false} return true };
+
+const TABS=[["reg","Player registration"],["ev","Event registration"],["auc","Auction"],["draw","Draw"],["score","Scoring"],["part","Participants"],["bud","Budget and audit"],["gal","Gallery"],["fb","Feedback"]];
+const soon=(t,n)=>`<h2>${t}</h2><div class="note">${n}</div>`;
+
+// ---------- data loading ----------
+async function load(){
+  const {data:{user}}=await sb.auth.getUser();
+  S.user=user; if(!user) return render();
+  const [p,e,pl]=await Promise.all([
+    sb.from("profiles").select("role").eq("id",user.id).single(),
+    sb.from("editions").select("*").order("year",{ascending:false}),
+    sb.from("players").select("*").eq("user_id",user.id).maybeSingle()]);
+  S.role=p.data?.role||"viewer"; S.eds=e.data||[]; S.player=pl.data;
+  let saved=null; try{saved=+localStorage.getItem("tc_ed")}catch{}
+  S.ed=S.eds.find(x=>x.id===saved)||S.eds.find(x=>x.is_active)||S.eds[0]||null;
+  if(S.tab==="reg"&&S.player) S.tab="ev";
+  render();
+}
+
+// ---------- rendering ----------
+async function render(){
+  const app=$("#app");
+  if(!S.user){app.innerHTML=loginHTML();return}
+  app.innerHTML=`<header><div class="logo">Terrace <b>Cup</b></div><div class="ctl">
+    <select data-chg="ed">${S.eds.map(x=>`<option value="${x.id}" ${S.ed&&x.id===S.ed.id?"selected":""}>${E(x.name)}${x.is_active?" (live)":" (archive)"}</option>`).join("")}</select>
+    <span>${E(S.user.email)} · ${S.role==="super"?"Super admin":S.role==="admin"?"Admin":"Viewer"}</span>
+    <button class="s o" data-act="out">Sign out</button></div></header>
+    <nav>${TABS.filter(t=>t[0]!=="bud"||isAdm()).map(t=>`<button data-tab="${t[0]}" class="${t[0]===S.tab?"on":""}">${t[1]}</button>`).join("")}</nav>
+    <main id="main"><p class="m">Loading…</p></main>`;
+  let h; try{h=await V[S.tab]()}catch(err){h=`<div class="note">${E(err.message)}</div>`}
+  const m=$("#main"); if(m) m.innerHTML=h;
+}
+
+function loginHTML(){
+  const t={in:"Sign in",up:"Create account",code:"Sign in with email code",verify:"Enter your code"}[S.mode];
+  const btn={in:"Sign in",up:"Create account",code:"Email me a code",verify:"Verify and continue"}[S.mode];
+  const link=(m,l)=>`<a href="#" data-mode="${m}">${l}</a>`;
+  return `<div class="login"><div class="logo" style="text-align:center;margin-bottom:16px">Terrace <b>Cup</b></div>
+  <form class="card" data-f="login"><h3>${t}</h3>${S.msg?`<div class="note">${E(S.msg)}</div>`:""}
+  <label>Email</label><input name="email" type="email" required value="${E(S.email)}" ${S.mode==="verify"?"readonly":""}>
+  ${S.mode==="in"||S.mode==="up"?`<label>Password</label><input name="pw" type="password" required minlength="6">`:""}
+  ${S.mode==="verify"?`<label>6-digit code from your email</label><input name="otp" inputmode="numeric" required>`:""}
+  <button style="width:100%">${btn}</button>
+  ${S.mode!=="verify"?`<button type="button" class="g" style="width:100%" data-act="google">Continue with Google</button>`:""}
+  <p class="m" style="margin-top:16px">${[S.mode!=="in"&&link("in","Sign in with password"),S.mode!=="up"&&link("up","Create account"),S.mode!=="code"&&S.mode!=="verify"&&link("code","Email me a code")].filter(Boolean).join(" · ")}</p></form></div>`;
+}
+
+// ---------- views ----------
+const V={};
+V.reg=async()=>{const p=S.player||{};return `<h2>Player registration</h2>
+<p class="m">${S.player?"Your profile is saved. You can update it here.":"Sign up once. Your profile carries over to every Terrace Cup edition."}</p>
+<form class="card" data-f="player"><div class="g2">
+<div><label>Full name</label><input name="full_name" required value="${E(p.full_name)}"></div>
+<div><label>Phone</label><input name="phone" value="${E(p.phone)}"></div>
+<div><label>Area or city</label><input name="area" value="${E(p.area)}"></div>
+<div><label>Playing level</label><select name="level">${["Beginner","Intermediate","Advanced"].map(l=>`<option ${p.level===l?"selected":""}>${l}</option>`).join("")}</select></div></div>
+<button>${S.player?"Save changes":"Register as a player"}</button></form>`};
+
+V.ev=async()=>{
+  if(!S.ed) return `<p class="m">No edition has been created yet.</p>`;
+  if(!S.player){S.tab="reg";return V.reg()}
+  const [ev,mine]=await Promise.all([
+    sb.from("events").select("*").eq("edition_id",S.ed.id).order("id"),
+    sb.from("registrations").select("event_id,status").eq("player_id",S.player.id)]);
+  const st=new Map((mine.data||[]).map(r=>[r.event_id,r.status]));
+  const qr=S.ed.qr_path?pub(S.ed.qr_path):null;
+  let h=`<h2>Event registration</h2>${live()?"":`<div class="note">${E(S.ed.name)} is archived. Registrations are read-only.</div>`}<div class="grid">`;
+  h+=(ev.data||[]).map(v=>`<div class="card"><h3>${E(v.name)}</h3><div class="gold">${R(v.fee)}</div>`+
+    (st.get(v.id)?`<span class="chip ${st.get(v.id)}">${st.get(v.id)}</span>`:live()?`<details><summary>Register and pay</summary>
+    ${qr?`<img src="${qr}" alt="GPay QR" style="width:200px;background:#fff;padding:8px;border-radius:6px;margin-top:8px">`:`<p class="m">The payment QR has not been uploaded yet.</p>`}
+    <p class="m">Pay ${R(v.fee)} by scanning, then enter the transaction ID.</p>
+    <form data-f="reg"><input type="hidden" name="event_id" value="${v.id}"><label>UPI transaction ID (UTR)</label><input name="utr" required>
+    <label>Screenshot (optional)</label><input type="file" name="proof" accept="image/*"><button>Submit payment</button></form></details>`:`<span class="m">Closed</span>`)+`</div>`).join("")+
+    ((ev.data||[]).length?"":`<p class="m">No events yet for this edition.</p>`)+`</div>`;
+  if(isAdm()&&live()){
+    h+=`<h3 style="margin-top:24px">Add an event</h3><form class="card g2" data-f="event"><div><label>Event name</label><input name="name" required></div><div><label>Fee (₹)</label><input name="fee" type="number" min="0" value="0"></div><div><button class="g">Add event</button></div></form>`;
+    const {data}=await sb.from("registrations").select("id,utr,proof_path,players(full_name),events!inner(name,edition_id)").eq("status","pending").eq("events.edition_id",S.ed.id);
+    const rows=await Promise.all((data||[]).map(async r=>{
+      const u=r.proof_path?(await sb.storage.from("payment-proofs").createSignedUrl(r.proof_path,3600)).data?.signedUrl:null;
+      return `<tr><td>${E(r.players?.full_name)}</td><td>${E(r.events?.name)}</td><td>${E(r.utr)}</td><td>${u?`<a href="${u}" target="_blank" rel="noopener">View</a>`:"—"}</td>
+      <td style="white-space:nowrap"><button class="s g" data-act="verified" data-id="${r.id}">Verify</button><button class="s o" data-act="rejected" data-id="${r.id}">Reject</button></td></tr>`}));
+    h+=`<h3>Payment verification</h3><div class="card wrap">${rows.length?`<table><tr><th>Player</th><th>Event</th><th>UTR</th><th>Proof</th><th></th></tr>${rows.join("")}</table>`:`<p class="m">No payments waiting.</p>`}</div>`;
+  }
+  if(S.role==="super"&&live()) h+=`<form class="card" data-f="qr"><h3>GPay QR for ${E(S.ed.name)}</h3><input type="file" name="qr" accept="image/*" required><button class="g">${qr?"Replace QR":"Upload QR"}</button></form>`;
+  return h;
+};
+
+V.auc=async()=>soon("Auction","Coming next. Your auction code plugs in here and runs per event.");
+V.draw=async()=>soon("Draw","Coming next. Draw details will be added here.");
+V.score=async()=>soon("Scoring","Coming next. Your scoring portal code replaces this panel.");
+
+V.part=async()=>{
+  if(!S.ed) return `<p class="m">No edition yet.</p>`;
+  const [ev,rows]=await Promise.all([sb.from("events").select("id,name").eq("edition_id",S.ed.id),sb.from("participants").select("*").eq("edition_id",S.ed.id).order("id")]);
+  const nm=new Map((ev.data||[]).map(e=>[e.id,e.name]));
+  return `<h2>Participants, ${E(S.ed.name)}</h2><div class="card wrap"><table><tr><th>Player</th><th>Area</th><th>Event</th><th>Status</th></tr>
+  ${(rows.data||[]).map(r=>`<tr><td>${E(r.full_name)}</td><td>${E(r.area)}</td><td>${E(nm.get(r.event_id))}</td><td><span class="chip ${r.status}">${r.status}</span></td></tr>`).join("")||`<tr><td colspan="4" class="m">No registrations yet.</td></tr>`}</table></div>`;
+};
+
+V.bud=async()=>{
+  if(!isAdm()) return `<p class="m">Admins only.</p>`;
+  const [inc,exp]=await Promise.all([
+    sb.from("registrations").select("id,events!inner(fee,edition_id)").eq("status","verified").eq("events.edition_id",S.ed.id),
+    sb.from("expenses").select("*").eq("edition_id",S.ed.id).order("created_at",{ascending:false})]);
+  const income=(inc.data||[]).reduce((a,r)=>a+Number(r.events.fee),0), spent=(exp.data||[]).reduce((a,e)=>a+Number(e.amount),0);
+  let h=`<h2>Budget and audit, ${E(S.ed.name)}</h2><div class="stats"><div class="card"><div class="m">Income (verified)</div><div class="gold">${R(income)}</div></div>
+  <div class="card"><div class="m">Expenses</div><div class="gold" style="color:var(--red2)">${R(spent)}</div></div><div class="card"><div class="m">Balance</div><div class="gold">${R(income-spent)}</div></div></div>
+  <div class="card wrap"><table><tr><th>Expense</th><th>Amount</th><th></th></tr>${(exp.data||[]).map(e=>`<tr><td>${E(e.description)}</td><td>${R(e.amount)}</td><td>${S.role==="super"?`<button class="s o" data-act="delexp" data-id="${e.id}">Delete</button>`:""}</td></tr>`).join("")||`<tr><td colspan="3" class="m">No expenses yet.</td></tr>`}</table>
+  ${live()?`<form data-f="exp" class="g2"><div><label>Expense</label><input name="description" required></div><div><label>Amount (₹)</label><input name="amount" type="number" min="1" step="0.01" required></div><div><button class="g">Add expense</button></div></form>`:""}</div>`;
+  if(S.role==="super"){
+    const {data}=await sb.from("audit_log").select("*").order("created_at",{ascending:false}).limit(50);
+    h+=`<h3>Audit log</h3><div class="card">${(data||[]).map(a=>`<div>${new Date(a.created_at).toLocaleString("en-IN")} · <b>${E(a.action)}</b> <span class="m">${E(JSON.stringify(a.details||{}))}</span></div>`).join("")||`<p class="m">Nothing recorded yet.</p>`}</div>`;
+  } else h+=`<p class="m">The full audit log is visible to the super admin only.</p>`;
+  return h;
+};
+
+V.gal=async()=>{
+  if(!S.ed) return `<p class="m">No edition yet.</p>`;
+  const {data}=await sb.from("photos").select("*").eq("edition_id",S.ed.id).order("created_at",{ascending:false});
+  return `<h2>Gallery, ${E(S.ed.name)}</h2><div class="grid">${(data||[]).map(p=>`<div><img class="ph" loading="lazy" src="${pub(p.storage_path)}" alt="${E(p.caption)}"><div class="m">${E(p.caption)}${isAdm()?` <a href="#" data-act="delphoto" data-id="${p.id}">remove</a>`:""}</div></div>`).join("")||`<p class="m">No photos yet.</p>`}</div>
+  ${isAdm()&&live()?`<form class="card" data-f="photo" style="margin-top:14px"><label>Photo</label><input type="file" name="file" accept="image/*" required><label>Caption</label><input name="caption"><button>Upload photo</button></form>`:""}`;
+};
+
+V.fb=async()=>{
+  let h=`<h2>Feedback</h2><form class="card" data-f="fb"><label>Rating</label><select name="rating">${[5,4,3,2,1].map(n=>`<option>${n}</option>`).join("")}</select>
+  <label>Your feedback</label><textarea name="message" rows="3" required></textarea><button>Send feedback</button></form>`;
+  if(isAdm()){
+    const {data}=await sb.from("feedback").select("*,profiles(email)").order("created_at",{ascending:false});
+    h+=`<h3>Received</h3>`+((data||[]).map(f=>`<div class="card"><b>${E(f.profiles?.email)}</b> <span class="gold" style="font-size:18px">${"★".repeat(f.rating)}</span><p>${E(f.message)}</p>${S.role==="super"?`<button class="s o" data-act="delfb" data-id="${f.id}">Delete</button>`:""}</div>`).join("")||`<p class="m">No feedback yet.</p>`);
+  } else h+=`<p class="m">Admins read and reply to feedback.</p>`;
+  return h;
+};
+
+// ---------- actions ----------
+const upload=async(bucket,path,file)=>sb.storage.from(bucket).upload(path,file);
+const safe=n=>n.replace(/[^\w.-]/g,"_");
+const F={
+  async login(fd){
+    const email=fd.get("email").trim(); S.email=email; S.msg="";
+    if(S.mode==="in"){const r=await sb.auth.signInWithPassword({email,password:fd.get("pw")});if(r.error)S.msg=r.error.message;else return load()}
+    else if(S.mode==="up"){const r=await sb.auth.signUp({email,password:fd.get("pw")});if(r.error)S.msg=r.error.message;else{S.mode="verify";S.otp="signup";S.msg="We emailed you a 6-digit code. Enter it below."}}
+    else if(S.mode==="code"){const r=await sb.auth.signInWithOtp({email,options:{shouldCreateUser:true}});if(r.error)S.msg=r.error.message;else{S.mode="verify";S.otp="email";S.msg="We emailed you a 6-digit code. Enter it below."}}
+    else{const r=await sb.auth.verifyOtp({email,token:fd.get("otp").trim(),type:S.otp});if(r.error)S.msg=r.error.message;else return load()}
+    render();
+  },
+  async player(fd){
+    const r=await sb.from("players").upsert({user_id:S.user.id,full_name:fd.get("full_name").trim(),email:S.user.email,phone:fd.get("phone"),area:fd.get("area"),level:fd.get("level")},{onConflict:"user_id"});
+    if(chk(r)){toast("Profile saved");S.tab="ev";await load()}
+  },
+  async reg(fd){
+    let proof=null; const f=fd.get("proof");
+    if(f&&f.size){proof=`${S.user.id}/${Date.now()}-${safe(f.name)}`;if(!chk(await upload("payment-proofs",proof,f)))return}
+    const r=await sb.from("registrations").insert({event_id:+fd.get("event_id"),player_id:S.player.id,utr:fd.get("utr").trim(),proof_path:proof});
+    if(r.error){toast(r.error.code==="23505"?"This transaction ID or event entry already exists.":r.error.message);return}
+    toast("Submitted. Waiting for admin check");render();
+  },
+  async event(fd){if(chk(await sb.from("events").insert({edition_id:S.ed.id,name:fd.get("name").trim(),fee:+fd.get("fee")||0})))render()},
+  async qr(fd){
+    const f=fd.get("qr"),path=`qr/${S.ed.id}-${Date.now()}.png`;
+    if(!chk(await upload("public-assets",path,f)))return;
+    if(chk(await sb.from("editions").update({qr_path:path}).eq("id",S.ed.id))){S.ed.qr_path=path;toast("QR saved");render()}
+  },
+  async exp(fd){if(chk(await sb.from("expenses").insert({edition_id:S.ed.id,description:fd.get("description").trim(),amount:+fd.get("amount"),created_by:S.user.id})))render()},
+  async photo(fd){
+    const f=fd.get("file"),path=`gallery/${S.ed.id}/${Date.now()}-${safe(f.name)}`;
+    if(!chk(await upload("public-assets",path,f)))return;
+    if(chk(await sb.from("photos").insert({edition_id:S.ed.id,caption:fd.get("caption"),storage_path:path,uploaded_by:S.user.id})))render()
+  },
+  async fb(fd){if(chk(await sb.from("feedback").insert({edition_id:S.ed?.id,user_id:S.user.id,rating:+fd.get("rating"),message:fd.get("message").trim()}))){toast("Thanks for your feedback");render()}}
+};
+const A={
+  async out(){await sb.auth.signOut();S.user=null;S.mode="in";S.msg="";render()},
+  google(){sb.auth.signInWithOAuth({provider:"google",options:{redirectTo:location.origin+location.pathname}})},
+  async verified(id){if(chk(await sb.from("registrations").update({status:"verified"}).eq("id",id)))render()},
+  async rejected(id){if(chk(await sb.from("registrations").update({status:"rejected"}).eq("id",id)))render()},
+  async delexp(id){if(confirm("Delete this expense?")&&chk(await sb.from("expenses").delete().eq("id",id)))render()},
+  async delphoto(id){if(confirm("Remove this photo?")&&chk(await sb.from("photos").delete().eq("id",id)))render()},
+  async delfb(id){if(chk(await sb.from("feedback").delete().eq("id",id)))render()}
+};
+document.addEventListener("submit",async e=>{const f=e.target.dataset.f;if(!f)return;e.preventDefault();const b=e.target.querySelector("button");if(b)b.disabled=true;
+  try{await F[f](new FormData(e.target))}finally{if(b)b.disabled=false}});
+document.addEventListener("click",e=>{
+  const a=e.target.closest("[data-act]");if(a){e.preventDefault();A[a.dataset.act](a.dataset.id);return}
+  const t=e.target.closest("[data-tab]");if(t){S.tab=t.dataset.tab;render();return}
+  const m=e.target.closest("[data-mode]");if(m){e.preventDefault();S.mode=m.dataset.mode;S.msg="";render()}});
+document.addEventListener("change",e=>{if(e.target.dataset.chg==="ed"){S.ed=S.eds.find(x=>x.id===+e.target.value);try{localStorage.setItem("tc_ed",S.ed.id)}catch{}render()}});
+sb.auth.onAuthStateChange((ev)=>{if(ev==="SIGNED_IN"&&!S.user)setTimeout(load,0)});
+load();
+</script>
+</body>
+</html>
