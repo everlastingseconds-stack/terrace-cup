@@ -42,6 +42,17 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:9px 8px;
 .chk{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
 .ck{display:flex;align-items:center;gap:8px;margin:0;padding:8px 10px;background:#0a0a0a;border:1px solid var(--line);border-radius:6px;color:var(--text);font-size:15px;cursor:pointer}
 .ck input{width:auto;accent-color:var(--red)}
+.sub{display:flex;gap:6px;margin:4px 0 16px;flex-wrap:wrap}.sub button{margin:0;background:none;border:1px solid var(--line);color:var(--text)}.sub button.on{background:var(--gold);border-color:var(--gold);color:#000}
+.tls{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
+.tl{background:#0a0a0a;border:1px solid var(--line);border-radius:6px;padding:10px}.tl.full{border-color:var(--gold)}
+.th{display:flex;justify-content:space-between;gap:6px;align-items:baseline}
+.st{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:8px 0}.st div{background:#171717;border-radius:4px;padding:4px 8px}.st span{display:block;font-size:11px;color:var(--muted)}.st b{color:var(--gold2);font-size:17px}
+.sq{max-height:90px;overflow:auto;font-size:13px}.sq div{display:flex;justify-content:space-between;border-bottom:1px dashed var(--line);padding:2px 0}
+.pool{max-height:300px;overflow:auto}.pr{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:6px 8px;border-bottom:1px solid var(--line)}.pr.cur{background:#2a0a10;border-left:3px solid var(--red)}
+.stage{text-align:center;max-width:640px;margin:0 auto 14px}.stage .pn{font:700 38px "Barlow Condensed",sans-serif;color:var(--gold2)}
+.stage .row{display:grid;grid-template-columns:1fr 1fr;gap:10px;text-align:left;margin-top:8px}.stage .full{grid-column:1/-1;text-align:center}
+.bidrow{display:flex;gap:8px}.bidrow button{margin:0;white-space:nowrap}
+@media(max-width:600px){.stage .row{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -165,7 +176,6 @@ V.ev=async()=>{
   return h;
 };
 
-V.auc=async()=>soon("Auction","Coming next. Your auction code plugs in here and runs per event.");
 V.draw=async()=>soon("Draw","Coming next. Draw details will be added here.");
 V.score=async()=>soon("Scoring","Coming next. Your scoring portal code replaces this panel.");
 
@@ -268,13 +278,137 @@ const A={
   async delphoto(id){if(confirm("Remove this photo?")&&chk(await sb.from("photos").delete().eq("id",id)))render()},
   async delfb(id){if(chk(await sb.from("feedback").delete().eq("id",id)))render()}
 };
+// ================= AUCTION (ported from Terrace_Cup___Auction_Room.html) =================
+const AU={ev:null,st:null,loaded:null,tab:"live",ch:null};
+const auNew=()=>({tournName:"",teams:[],players:[],callOrder:[],history:[],cur:null,settings:{totalPlayers:null,maxPerTeam:null,bidIncrement:100}});
+const uid=()=>Math.random().toString(36).slice(2,10);
+const shuf=a=>{a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a};
+const auPool=s=>{const c=s.settings.totalPlayers;return c>0?s.players.slice(0,c):s.players};
+function auPend(s){
+  const pool=auPool(s),ids=pool.map(p=>p.id);
+  s.callOrder=(s.callOrder||[]).filter(i=>ids.includes(i));
+  const miss=ids.filter(i=>!s.callOrder.includes(i));
+  if(miss.length)s.callOrder=s.callOrder.concat(shuf(miss));
+  const m=new Map(pool.map(p=>[p.id,p]));
+  return s.callOrder.map(i=>m.get(i)).filter(p=>p&&p.status==="pending");
+}
+const auFull=(s,t)=>{const c=s.settings.maxPerTeam;return !!(c>0&&t.squad.length+1>=c)};
+const auMin=s=>{const p=auPool(s);return p.length?Math.min(...p.map(x=>x.base)):0};
+function auMax(s,t){const c=s.settings.maxPerTeam,rem=t.budget-t.spent;if(!(c>0))return null;const need=c-(t.squad.length+1);if(need<=1)return rem;return Math.max(0,rem-(need-1)*auMin(s))}
+async function auLoad(){
+  const r=await sb.from("auctions").select("state").eq("event_id",AU.ev).maybeSingle();
+  const d=auNew();AU.st=Object.assign(d,r.data?.state||{});AU.st.settings=Object.assign(auNew().settings,AU.st.settings||{});AU.loaded=AU.ev;
+  if(AU.ch)sb.removeChannel(AU.ch);
+  AU.ch=sb.channel("auction-"+AU.ev).on("postgres_changes",{event:"*",schema:"public",table:"auctions",filter:"event_id=eq."+AU.ev},p=>{
+    const n=p.new;if(!n||n.updated_by===S.user.id)return;AU.st=n.state;if(S.tab==="auc")render()}).subscribe();
+}
+const auSave=async()=>chk(await sb.from("auctions").upsert({event_id:AU.ev,state:AU.st,updated_by:S.user.id,updated_at:new Date().toISOString()}));
+async function au(fn){if(!isAdm()||!live())return;const m=fn(AU.st);if(m)return toast(m);await auSave();render()}
+
+V.auc=async()=>{
+  if(!S.ed)return `<p class="m">No edition yet.</p>`;
+  const {data:evs}=await sb.from("events").select("id,name").eq("edition_id",S.ed.id).order("id");
+  if(!(evs||[]).length)return `<h2>Auction</h2><div class="note">Create an event first on the Event registration tab.</div>`;
+  if(!evs.some(e=>e.id===AU.ev)){AU.ev=evs[0].id;AU.loaded=null}
+  if(AU.loaded!==AU.ev)await auLoad();
+  const s=AU.st,run=isAdm()&&live();
+  if(!run&&AU.tab==="setup")AU.tab="live";
+  const tabs=[["setup","Setup"],["live","Live auction"],["results","Results"]].filter(t=>t[0]!=="setup"||run);
+  return `<h2>Auction</h2>${live()?"":`<div class="note">${E(S.ed.name)} is archived. The auction is read-only.</div>`}
+  <div class="card" style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end"><div style="flex:1;min-width:200px"><label>Event</label><select data-chg="auev">${evs.map(e=>`<option value="${e.id}" ${e.id===AU.ev?"selected":""}>${E(e.name)}</option>`).join("")}</select></div>${s.tournName?`<div class="gold">${E(s.tournName)}</div>`:""}</div>
+  <div class="sub">${tabs.map(t=>`<button data-act="autab" data-id="${t[0]}" class="${AU.tab===t[0]?"on":""}">${t[1]}</button>`).join("")}</div>
+  ${AU.tab==="setup"?auSetup(s):AU.tab==="results"?auResults(s,run):auLive(s,run)}`;
+};
+
+function auSetup(s){
+  const st=s.settings;
+  return `<div class="card"><h3>Tournament name</h3><form data-f="autourn"><input name="tn" value="${E(s.tournName)}" placeholder="e.g. Terrace Cup 2026 Team Auction"><button class="g">Save name</button></form></div>
+<div class="card"><h3>Teams and captains</h3><form data-f="auteam"><div class="g2"><div><label>Team name</label><input name="name" required></div><div><label>Captain</label><input name="captain"></div><div><label>Total budget</label><input name="budget" type="number" min="0" required></div><div style="align-self:end"><button class="g" style="width:100%">Add team</button></div></div></form>
+<div class="wrap"><table><tr><th>Team</th><th>Captain</th><th>Budget</th><th></th></tr>${s.teams.map(t=>`<tr><td>${E(t.name)}</td><td>${E(t.captain||"—")}</td><td>${t.budget}</td><td><button class="s o" data-act="audelteam" data-id="${t.id}">Remove</button></td></tr>`).join("")||`<tr><td colspan="4" class="m">No teams added yet.</td></tr>`}</table></div></div>
+<div class="card"><h3>Auction rules</h3><form data-f="aurules"><div class="g2"><div><label>Total players to auction</label><input name="tp" type="number" min="1" value="${st.totalPlayers??""}" placeholder="Blank = full list"></div><div><label>Players per team (incl. captain)</label><input name="mp" type="number" min="1" value="${st.maxPerTeam??""}" placeholder="Blank = no cap"></div><div><label>Bid increment</label><input name="bi" type="number" min="1" value="${st.bidIncrement}"></div></div><button class="g">Save rules</button></form></div>
+<div class="card"><h3>Players</h3>
+<form data-f="auimport" class="g2"><div><label>Base value for imported players</label><input name="base" type="number" min="0" value="500"></div><div style="align-self:end"><button class="g" style="width:100%">Import verified players of this event</button></div></form>
+<form data-f="auplayers"><label>Or paste players, one per line: Name, Category, Base Value</label><textarea name="bulk" rows="4" placeholder="Rahul Sharma, Batsman, 500"></textarea><button>Add players from list</button></form>
+<div class="wrap pool" style="margin-top:12px"><table><tr><th>Player</th><th>Category</th><th>Base</th><th></th></tr>${s.players.map(p=>`<tr><td>${E(p.name)}</td><td>${E(p.category||"—")}</td><td>${p.base}</td><td><button class="s o" data-act="audelplayer" data-id="${p.id}">Remove</button></td></tr>`).join("")||`<tr><td colspan="4" class="m">No players added yet.</td></tr>`}</table></div>
+${st.totalPlayers&&st.totalPlayers<s.players.length?`<p class="m">Only the first ${st.totalPlayers} players in this list will be called.</p>`:""}</div>
+<div class="card"><h3>Reset</h3><button class="o" data-act="auresetall">Reset everything</button></div>`;
+}
+
+function auLive(s,run){
+  if(!s.teams.length||!s.players.length)return `<div class="card m">${run?"Add at least one team and one player in Setup first.":"The auction has not been set up yet."}</div>`;
+  const pool=auPool(s),before=JSON.stringify(s.callOrder),pend=auPend(s),cur=pend[0],cap=s.settings.maxPerTeam;
+  if(run&&JSON.stringify(s.callOrder)!==before)auSave();
+  const teams=s.teams.map(t=>{const full=auFull(s,t),mc=auMax(s,t);return `<div class="tl${full?" full":""}"><div class="th"><b>${E(t.name)}</b><span class="chip pending">${t.squad.length+1}${cap?"/"+cap:""}</span></div><div class="m">Captain: ${E(t.captain||"—")}${full?" · SQUAD FULL":""}</div><div class="st"><div><span>Purse left</span><b>${t.budget-t.spent}</b></div><div><span>Max call</span><b>${mc===null?"—":mc}</b></div></div><div class="sq">${t.squad.map(x=>`<div><span>${E(x.name)}</span><span>${x.price}</span></div>`).join("")||`<span class="m">No players yet</span>`}</div></div>`}).join("");
+  const rows=pool.map(p=>{const tm=s.teams.find(t=>t.id===p.soldTo),c=p.status==="sold"?"verified":p.status==="unsold"?"rejected":"pending";return `<div class="pr${cur&&p.id===cur.id?" cur":""}"><span>${E(p.name)}${p.category?` <span class="m">(${E(p.category)})</span>`:""}</span><span class="chip ${c}">${p.status==="sold"?"Sold"+(tm?" — "+E(tm.name):""):p.status==="unsold"?"Unsold":"Available"}</span></div>`}).join("");
+  let stage;
+  if(!cur)stage=`<h3>All players called</h3><p class="m">See the Results tab for the full breakdown.</p>`;
+  else{
+    if(!s.cur||s.cur.pid!==cur.id)s.cur={pid:cur.id,bid:cur.base,teamId:(s.teams.find(t=>!auFull(s,t))||{}).id||""};
+    const lead=s.teams.find(t=>t.id===s.cur.teamId);
+    stage=`<div class="m">${pool.length-pend.length} of ${pool.length} called</div>${cur.photo?`<div style="margin:8px 0">${avatar(cur.photo,96)}</div>`:""}
+<div class="pn">${E(cur.name)}</div><div style="color:var(--gold)">${E(cur.category||"")}</div><div class="m">Base value: ${cur.base}</div>`+(run?`
+<div class="row"><div><label>Sold to</label><select data-chg="autm">${s.teams.map(t=>`<option value="${t.id}" ${t.id===s.cur.teamId?"selected":""} ${auFull(s,t)?"disabled":""}>${E(t.name)} (purse left: ${t.budget-t.spent})${auFull(s,t)?" — SQUAD FULL":""}</option>`).join("")}</select></div>
+<div><label>Current bid</label><div class="bidrow"><input type="number" min="0" value="${s.cur.bid}" data-chg="aubid"><button class="o" data-act="auinc">+ ${s.settings.bidIncrement||100}</button></div></div>
+<div class="full"><button data-act="ausell">Sold</button> <button class="o" data-act="auunsold">Unsold</button> <button class="o" data-act="auundo" ${s.history.length?"":"disabled"}>Undo last</button> <button class="o" data-act="aushuf">Shuffle remaining</button></div></div>`
+  :`<div class="gold" style="margin-top:10px">Current bid ${s.cur.bid}</div>${lead?`<div class="m">Leading: ${E(lead.name)}</div>`:""}<p class="m">Live updates appear here automatically.</p>`);
+  }
+  return `<div class="card"><h3>Teams, live</h3><div class="tls">${teams}</div></div>
+<div class="card"><h3>Players pool</h3><div class="pool">${rows}</div></div><div class="card stage">${stage}</div>`;
+}
+
+function auResults(s,run){
+  const un=s.players.filter(p=>p.status==="unsold");
+  return `<div class="card"><h3>Squad breakdown</h3>${s.teams.map(t=>`<div style="margin-bottom:16px"><h3 style="color:var(--gold2)">${E(t.name)} <span class="chip pending">${t.squad.length} players</span></h3><div class="m">Captain: ${E(t.captain||"—")} · Spent ${t.spent} of ${t.budget} · Remaining ${t.budget-t.spent}</div><div class="wrap"><table><tr><th>Player</th><th>Category</th><th>Price</th></tr>${t.squad.map(x=>`<tr><td>${E(x.name)}</td><td>${E(x.category||"—")}</td><td>${x.price}</td></tr>`).join("")||`<tr><td colspan="3" class="m">No players bought yet.</td></tr>`}</table></div></div>`).join("")||`<p class="m">No teams yet.</p>`}<button class="o" data-act="aucopy">Copy summary</button></div>
+<div class="card"><h3>Unsold players</h3>${un.length?`<div class="wrap"><table><tr><th>Player</th><th>Category</th><th>Base value</th></tr>${un.map(p=>`<tr><td>${E(p.name)}</td><td>${E(p.category||"—")}</td><td>${p.base}</td></tr>`).join("")}</table></div>`:`<p class="m">None yet.</p>`}</div>
+${run?`<div class="card"><h3>Restart auction</h3><p class="m">Clears every sale, purse and call. Teams, budgets and the player list stay as set up.</p><button data-act="auresetauc">Reset auction</button></div>`:""}`;
+}
+
+Object.assign(F,{
+  autourn:fd=>au(s=>{s.tournName=fd.get("tn").trim()}),
+  auteam:fd=>au(s=>{const n=fd.get("name").trim(),b=parseFloat(fd.get("budget"));if(!n||isNaN(b)||b<0)return "Enter a team name and a valid budget.";s.teams.push({id:uid(),name:n,captain:fd.get("captain").trim(),budget:b,spent:0,squad:[]})}),
+  aurules:fd=>au(s=>{const n=k=>{const v=parseInt(fd.get(k),10);return v>=1?v:null},b=parseFloat(fd.get("bi"));s.settings.totalPlayers=n("tp");s.settings.maxPerTeam=n("mp");s.settings.bidIncrement=b>=1?b:100;s.cur=null}),
+  auplayers:fd=>au(s=>{let a=0,k=0;fd.get("bulk").split("\n").map(l=>l.trim()).filter(Boolean).forEach(l=>{const p=l.split(",").map(x=>x.trim()),b=parseFloat(p[2]);if(p.length<3||!p[0]||isNaN(b)){k++;return}s.players.push({id:uid(),name:p[0],category:p[1],base:b,status:"pending",soldTo:null,price:null});a++});if(!a)return "No valid players. Use: Name, Category, Base Value";toast(`Added ${a} player(s)${k?`, ${k} skipped`:""}`)}),
+  async auimport(fd){
+    const base=parseFloat(fd.get("base"))||0;
+    const {data}=await sb.from("participants").select("full_name,photo_path").eq("event_id",AU.ev).eq("status","verified");
+    return au(s=>{let a=0;(data||[]).forEach(r=>{if(s.players.some(p=>p.name===r.full_name))return;s.players.push({id:uid(),name:r.full_name,category:"Player",base,status:"pending",soldTo:null,price:null,photo:r.photo_path});a++});if(!a)return "No new verified players to import.";toast(`Imported ${a} verified player(s)`)});
+  }
+});
+Object.assign(A,{
+  autab(t){AU.tab=t;render()},
+  auinc(){au(s=>{s.cur.bid=(+s.cur.bid||0)+(s.settings.bidIncrement||100)})},
+  ausell(){au(s=>{const cur=auPend(s)[0];if(!cur)return;const t=s.teams.find(x=>x.id===s.cur.teamId),pr=parseFloat(s.cur.bid);
+    if(!t)return "Pick a team.";if(isNaN(pr)||pr<0)return "Enter a valid price.";if(auFull(s,t))return t.name+" has already reached its player cap.";
+    if(pr>t.budget-t.spent)return "That exceeds "+t.name+"’s remaining purse.";
+    const mx=auMax(s,t);if(mx!==null&&pr>mx)return "That exceeds "+t.name+"’s max call ("+mx+"). They must save enough to fill their remaining slots.";
+    cur.status="sold";cur.soldTo=t.id;cur.price=pr;t.spent+=pr;t.squad.push({playerId:cur.id,name:cur.name,category:cur.category,price:pr});s.history.push({type:"sold",playerId:cur.id,teamId:t.id,price:pr});s.cur=null})},
+  auunsold(){au(s=>{const cur=auPend(s)[0];if(!cur)return;cur.status="unsold";s.history.push({type:"unsold",playerId:cur.id});s.cur=null})},
+  auundo(){au(s=>{const l=s.history.pop();if(!l)return;const p=s.players.find(x=>x.id===l.playerId);
+    if(l.type==="sold"){const t=s.teams.find(x=>x.id===l.teamId);if(t){t.spent-=l.price;t.squad=t.squad.filter(x=>x.playerId!==l.playerId)}}
+    if(p){p.status="pending";p.soldTo=null;p.price=null}s.cur=null})},
+  aushuf(){au(s=>{auPend(s);const m=new Map(s.players.map(p=>[p.id,p])),pend=s.callOrder.filter(i=>m.get(i)?.status==="pending"),rest=s.callOrder.filter(i=>m.get(i)?.status!=="pending");s.callOrder=rest.concat(shuf(pend));s.cur=null})},
+  audelteam(id){au(s=>{s.teams=s.teams.filter(t=>t.id!==id)})},
+  audelplayer(id){au(s=>{s.players=s.players.filter(p=>p.id!==id);s.cur=null})},
+  auresetauc(){if(confirm("This clears every sale, purse and call. Teams and the player list stay. Are you sure?"))au(s=>{s.players.forEach(p=>{p.status="pending";p.soldTo=null;p.price=null});s.teams.forEach(t=>{t.spent=0;t.squad=[]});s.history=[];s.callOrder=[];s.cur=null})},
+  auresetall(){if(confirm("This clears teams, players and all auction progress. Are you sure?"))au(s=>{Object.assign(s,auNew())})},
+  aucopy(){const s=AU.st;let t=`${s.tournName||"Terrace Cup"}: Auction Summary\n\n`;
+    s.teams.forEach(x=>{t+=`${x.name} (Captain: ${x.captain||"—"}): Spent ${x.spent}/${x.budget}\n`;x.squad.forEach(p=>t+=`  - ${p.name} (${p.category||"—"}): ${p.price}\n`);t+="\n"});
+    const un=s.players.filter(p=>p.status==="unsold");if(un.length){t+="Unsold:\n";un.forEach(p=>t+=`  - ${p.name} (${p.category||"—"}): base ${p.base}\n`)}
+    navigator.clipboard.writeText(t).then(()=>toast("Summary copied"),()=>toast("Could not copy. Try a different browser."))}
+});
+// ==========================================================================================
+
 document.addEventListener("submit",async e=>{const f=e.target.dataset.f;if(!f)return;e.preventDefault();const b=e.target.querySelector("button");if(b)b.disabled=true;
   try{await F[f](new FormData(e.target))}catch(err){toast(err.message)}finally{if(b)b.disabled=false}});
 document.addEventListener("click",e=>{
   const a=e.target.closest("[data-act]");if(a){e.preventDefault();A[a.dataset.act](a.dataset.id);return}
   const t=e.target.closest("[data-tab]");if(t){S.tab=t.dataset.tab;render();return}
   const m=e.target.closest("[data-mode]");if(m){e.preventDefault();S.mode=m.dataset.mode;S.msg="";render()}});
-document.addEventListener("change",e=>{if(e.target.dataset.chg==="ed"){S.ed=S.eds.find(x=>x.id===+e.target.value);try{localStorage.setItem("tc_ed",S.ed.id)}catch{}render()}});
+document.addEventListener("change",e=>{const k=e.target.dataset.chg,v=e.target.value;
+  if(k==="ed"){S.ed=S.eds.find(x=>x.id===+v);AU.ev=null;AU.loaded=null;try{localStorage.setItem("tc_ed",S.ed.id)}catch{}render()}
+  else if(k==="auev"){AU.ev=+v;AU.loaded=null;render()}
+  else if(k==="autm")au(s=>{s.cur.teamId=v});
+  else if(k==="aubid")au(s=>{s.cur.bid=parseFloat(v)||0})});
 sb.auth.onAuthStateChange((ev)=>{if(ev==="SIGNED_IN"&&!S.user)setTimeout(load,0)});
 load();
 </script>
