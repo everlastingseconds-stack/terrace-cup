@@ -6,6 +6,7 @@
 <title>Terrace Cup</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.108.2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@4.2.1/dist/jspdf.umd.min.js"></script>
 <style>
 :root{--bg:#000;--panel:#111;--line:#2e2418;--red:#d1122f;--red2:#ff3a55;--gold:#d9a521;--gold2:#f3cf6b;--text:#f4ede0;--muted:#a69a85;--ok:#3fbf7f;color-scheme:dark}
 *{box-sizing:border-box}
@@ -492,12 +493,14 @@ V.draw=async()=>{
   const {data:evs}=await sb.from("events").select("id,name").eq("edition_id",S.ed.id).order("id");
   if(!(evs||[]).length)return `<h2>Draw</h2><div class="note">Create an event first on the Event registration tab.</div>`;
   if(!evs.some(e=>e.id===DR.ev))DR.ev=evs[0].id;
-  const r=await sb.from("draws").select("state").eq("event_id",DR.ev).maybeSingle();
+  const all=await sb.from("draws").select("event_id,state").in("event_id",evs.map(e=>e.id));
+  DR.evs=evs;DR.all={};(all.data||[]).forEach(x=>{if(x.state&&x.state.result&&x.state.result.revealed!==false)DR.all[x.event_id]=x.state.result});
+  const r={data:(all.data||[]).find(x=>x.event_id===DR.ev)};
   const d=drNew();DR.st=Object.assign(d,r.data?.state||{});DR.st.cfg=Object.assign(drNew().cfg,DR.st.cfg||{});
   const s=DR.st,run=isAdm()&&live();
   return `<h2>Draw</h2>${live()?"":`<div class="note">${E(S.ed.name)} is archived. The draw is read-only.</div>`}
   <div class="card"><label>Event</label><select data-chg="drev">${evs.map(e=>`<option value="${e.id}" ${e.id===DR.ev?"selected":""}>${E(e.name)}</option>`).join("")}</select></div>
-  ${run?drSetup(s):""}<div id="drOut">${drBody(s,run)}</div>`;
+  ${run?drSetup(s):""}<div id="drOut">${drBody(s,run)}</div>${drDownload()}`;
 };
 function drSetup(s){const c=s.cfg,opt=(v,l,cur)=>`<option value="${v}" ${cur===v?"selected":""}>${l}</option>`;
   return `<div class="card"><h3>Draw setup</h3><form data-f="drgen">
@@ -566,6 +569,95 @@ Object.assign(A,{
   drreveal(){if(!DR.playing&&isAdm()&&live())drPlay()},
   drclear(){if(DR.playing)return toast("The reveal is in progress.");if(confirm("Clear the current draw?"))dr(s=>{s.result=null})}
 });
+// ==============================================================================
+
+// ================= PDF EXPORT (one or many events in a single file) =================
+const pdfT=s=>String(s??"").replace(/[‘’]/g,"'").replace(/[“”]/g,'"').normalize("NFKD").replace(/[\u0300-\u036f]/g,"").replace(/[^\x20-\x7E]/g,"?");
+function pdfFit(doc,t,w){t=pdfT(t);if(doc.getTextWidth(t)<=w)return t;while(t.length>1&&doc.getTextWidth(t+"...")>w)t=t.slice(0,-1);return t+"..."}
+function pdfHead(doc,ev,sum,W,extra){
+  doc.setFillColor(0,0,0);doc.rect(0,0,W,16,"F");doc.setFillColor(209,18,47);doc.rect(0,16,W,1.2,"F");
+  doc.setFont("helvetica","bold");doc.setFontSize(15);doc.setTextColor(243,207,107);doc.text("TERRACE CUP",12,10.5);
+  doc.setFontSize(10);doc.setTextColor(255,255,255);doc.text(pdfT(S.ed.name),W-12,10.5,{align:"right"});
+  doc.setFontSize(18);doc.setTextColor(25,25,25);doc.text(pdfFit(doc,ev.name,W-24),12,28);
+  doc.setFont("helvetica","normal");doc.setFontSize(9);doc.setTextColor(110,110,110);doc.text(pdfFit(doc,sum,W-24),12,34);
+  if(extra){doc.setFont("helvetica","bold");doc.setFontSize(10);doc.setTextColor(209,18,47);doc.text(pdfT(extra),12,41)}
+}
+function pdfSlot(doc,s,x,y,w,h){
+  const b=y+h/2+1.3;
+  if(s.bye){doc.setFont("helvetica","italic");doc.setFontSize(8);doc.setTextColor(150,150,150);doc.text("BYE",x,b)}
+  else if(s.name){
+    let tw=0;if(s.team){doc.setFont("helvetica","normal");doc.setFontSize(6.5);tw=Math.min(22,doc.getTextWidth(pdfT(s.team))+2);doc.setTextColor(150,110,20);doc.text(pdfFit(doc,s.team,22),x+w,b,{align:"right"})}
+    doc.setFont("helvetica","bold");doc.setFontSize(8.5);doc.setTextColor(25,25,25);doc.text(pdfFit(doc,s.name,w-tw),x,b)}
+  else if(s.label){doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(25,25,25);doc.text(pdfFit(doc,s.label,w),x,b)}
+  else{doc.setFont("helvetica","normal");doc.setFontSize(7.5);doc.setTextColor(140,140,140);doc.text(`Winner R${s.from.r} M${s.from.m}`,x,b)}
+}
+function pdfBracket(doc,rounds,x0,y0,bw,gx,pitch){
+  const rowH=6,boxH=rowH*2,cy=[rounds[0].map((_,i)=>y0+i*pitch+pitch/2)];
+  for(let k=1;k<rounds.length;k++)cy.push(rounds[k].map((_,j)=>(cy[k-1][2*j]+cy[k-1][2*j+1])/2));
+  rounds.forEach((rd,k)=>{
+    const x=x0+k*(bw+gx);
+    doc.setFont("helvetica","bold");doc.setFontSize(10);doc.setTextColor(209,18,47);doc.text(rname(rd.length),x+bw/2,y0-4,{align:"center"});
+    rd.forEach((m,j)=>{
+      const c=cy[k][j],top=c-boxH/2;
+      doc.setDrawColor(120,120,120);doc.setLineWidth(.25);doc.rect(x,top,bw,boxH);doc.line(x,c,x+bw,c);
+      doc.setFillColor(209,18,47);doc.rect(x,top,1.2,boxH,"F");
+      doc.setFont("helvetica","normal");doc.setFontSize(6);doc.setTextColor(140,140,140);doc.text("M"+(j+1),x+bw-1,top-.8,{align:"right"});
+      pdfSlot(doc,m.a,x+3,top,bw-4.5,rowH);pdfSlot(doc,m.b,x+3,top+rowH,bw-4.5,rowH);
+      if(k<rounds.length-1){const mx=x+bw+gx/2;doc.setDrawColor(150,150,150);doc.line(x+bw,c,mx,c);
+        if(j%2===0){const c2=cy[k][j+1];doc.line(mx,c,mx,c2);doc.line(mx,(c+c2)/2,x+bw+gx,(c+c2)/2)}}
+    });
+  });
+}
+function drPdf(items){
+  const {jsPDF}=window.jspdf;let doc=null;
+  const np=(w,h)=>{const o=w>h?"l":"p";if(!doc){doc=new jsPDF({unit:"mm",format:[w,h],orientation:o});return}doc.addPage([w,h],o)};
+  items.forEach(({ev,r})=>{
+    const R=r.rounds,mc=R[0].length,bw=58,gx=14,pitch=17;
+    const real=R.flat().filter(m=>!m.a.bye&&!m.b.bye).length,gm=(r.groups||[]).reduce((a,g)=>a+g.fixtures.flat().length,0);
+    const sum=`${r.format==="ko"?"Knockout":"Round robin + knockout"} | ${r.players.length} players | ${gm?gm+" group matches, ":""}${real} knockout matches | Teammates in round 1: ${r.same==="yes"?"allowed":"not allowed"} | Drawn ${new Date(r.created).toLocaleString("en-IN")}`;
+    if(r.groups){
+      const W=297,H=210,colW=87,cx=c=>12+c*(colW+6),top=46,bot=H-10;let ys=[];
+      const page=()=>{np(W,H);pdfHead(doc,ev,sum,W,"Group stage");ys=[top,top,top]};page();
+      const ln=(c,y,t,bold,size,col,lh)=>{doc.setFont("helvetica",bold?"bold":"normal");doc.setFontSize(size);doc.setTextColor(...col);doc.text(pdfFit(doc,t,colW),cx(c),y+lh-1);return y+lh};
+      r.groups.forEach(g=>{
+        const its=[[g.name,1,11,[209,18,47],6.5]];
+        g.players.forEach((p,i)=>its.push([`${i+1}. ${p.name}${p.team?"  ("+p.team+")":""}`,0,8.5,[25,25,25],4.3]));
+        g.fixtures.forEach((rd,i)=>{its.push([`Matchday ${i+1}`,1,8,[150,110,20],5]);rd.forEach(m=>its.push([`${m[0].name}  vs  ${m[1].name}`,0,8,[25,25,25],4]))});
+        const h=its.reduce((a,i)=>a+i[4],0)+4;
+        if(h<=bot-top){ // fits in one column: put it in the emptiest column, groups sit side by side
+          let c=ys.indexOf(Math.min(...ys));if(ys[c]+h>bot){page();c=0}
+          let y=ys[c];its.forEach(i=>{y=ln(c,y,...i)});ys[c]=y+4;
+        }else{ // very large group: its own page(s), flowing across columns
+          page();let c=0,y=top;
+          its.forEach((it,k)=>{if(y+it[4]>bot){if(c<2)c++;else{page();c=0}y=top;if(k>0){doc.setFont("helvetica","bold");doc.setFontSize(10);doc.setTextColor(209,18,47);doc.text(pdfT(g.name)+" (cont.)",cx(c),y+4.5);y+=6}}y=ln(c,y,...it)});
+          ys=[bot,bot,bot];
+        }
+      });
+    }
+    const W=Math.max(297,24+R.length*bw+(R.length-1)*gx),H=Math.max(210,50+mc*pitch+14);
+    np(W,H);pdfHead(doc,ev,sum,W,r.groups?`Knockout bracket: top ${r.advance} ${r.groups.length===1?"from the group":"from each group"} qualify`:"Knockout bracket");
+    pdfBracket(doc,R,12,52,bw,gx,pitch);
+  });
+  return doc;
+}
+function drDownload(){
+  const have=(DR.evs||[]).filter(e=>DR.all[e.id]);
+  if(!have.length)return `<div class="card"><h3>Download as PDF</h3><p class="m">Available once a draw has been revealed.</p></div>`;
+  return `<form class="card" data-f="drpdf"><h3>Download as PDF</h3><p class="m">Tick one or more events. They are combined into a single PDF.</p>
+<div class="chk">${have.map(e=>`<label class="ck"><input type="checkbox" name="ev" value="${e.id}" ${e.id===DR.ev?"checked":""}> ${E(e.name)}</label>`).join("")}</div>
+<button class="g">Download PDF</button> <button type="button" class="o" data-act="drall">Select all</button></form>`;
+}
+Object.assign(F,{
+  drpdf(fd){
+    const items=fd.getAll("ev").map(Number).map(id=>({ev:(DR.evs||[]).find(e=>e.id===id),r:DR.all[id]})).filter(x=>x.ev&&x.r);
+    if(!items.length)return toast("Select at least one event with a draw.");
+    if(!window.jspdf)return toast("The PDF tool could not load. Check your internet connection and refresh.");
+    const slug=s=>s.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
+    drPdf(items).save(`terrace-cup-${S.ed.year}-draw${items.length===1?"-"+slug(items[0].ev.name):"s"}.pdf`);
+    toast(`Downloaded ${items.length} draw${items.length>1?"s":""}`);
+  }
+});
+Object.assign(A,{drall(){document.querySelectorAll("form[data-f=drpdf] input[name=ev]").forEach(c=>c.checked=true)}});
 // ==============================================================================
 
 document.addEventListener("submit",async e=>{const f=e.target.dataset.f;if(!f)return;e.preventDefault();const b=e.target.querySelector("button");if(b)b.disabled=true;
