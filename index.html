@@ -53,6 +53,12 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:9px 8px;
 .stage .row{display:grid;grid-template-columns:1fr 1fr;gap:10px;text-align:left;margin-top:8px}.stage .full{grid-column:1/-1;text-align:center}
 .bidrow{display:flex;gap:8px}.bidrow button{margin:0;white-space:nowrap}
 @media(max-width:600px){.stage .row{grid-template-columns:1fr}}
+.br{display:flex;gap:16px;overflow-x:auto;padding-bottom:10px}
+.rdw{display:flex;flex-direction:column;min-width:210px}.rdw h4{margin:0 0 8px;color:var(--gold2);font:700 17px "Barlow Condensed",sans-serif;text-align:center}
+.rd{display:flex;flex-direction:column;justify-content:space-around;gap:10px;flex:1}
+.mt{background:#0a0a0a;border:1px solid var(--line);border-left:3px solid var(--red);border-radius:6px;font-size:14px}
+.mt div{padding:6px 10px;border-bottom:1px solid var(--line)}.mt div:last-child{border:0}.mt .n{font-size:11px;color:var(--muted);background:#151515}
+.tm{font-size:11px;color:var(--gold);border:1px solid var(--line);border-radius:10px;padding:0 6px;margin-left:6px;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -176,7 +182,6 @@ V.ev=async()=>{
   return h;
 };
 
-V.draw=async()=>soon("Draw","Coming next. Draw details will be added here.");
 V.score=async()=>soon("Scoring","Coming next. Your scoring portal code replaces this panel.");
 
 V.part=async()=>{
@@ -398,6 +403,138 @@ Object.assign(A,{
 });
 // ==========================================================================================
 
+// ================= DRAW (knockout, or round robin + knockout) =================
+const DR={ev:null,st:null};
+const drNew=()=>({input:"",cfg:{format:"ko",same:"no",groups:2,advance:2},result:null});
+const tk=p=>(p.team||"").trim().toLowerCase();
+const sl=p=>({name:p.name,team:p.team||""});
+function drParse(txt){return txt.split("\n").map(l=>l.trim()).filter(Boolean).map(l=>{const i=l.indexOf(",");return i<0?{name:l,team:""}:{name:l.slice(0,i).trim(),team:l.slice(i+1).trim()}}).filter(p=>p.name)}
+// pair a list (even length) at random; when avoid is true, keep teammates apart where possible
+function drPair(list,avoid){
+  const bad=ps=>ps.filter(p=>tk(p[0])&&tk(p[0])===tk(p[1])).length, mk=a=>{const x=[];for(let i=0;i<a.length;i+=2)x.push([a[i],a[i+1]]);return x};
+  if(!avoid){const p=mk(shuf(list));return{pairs:p,bad:bad(p)}}
+  for(let t=0;t<60;t++){const p=mk(shuf(list));if(!bad(p))return{pairs:p,bad:0}}
+  // greedy: always pair a player from the biggest remaining team with one from another team
+  let pool=shuf(list),pairs=[];
+  while(pool.length){const c={};pool.forEach(p=>{if(tk(p))c[tk(p)]=(c[tk(p)]||0)+1});
+    pool.sort((x,y)=>(c[tk(y)]||0)-(c[tk(x)]||0));const a=pool.shift();
+    let j=pool.findIndex(p=>!tk(a)||tk(p)!==tk(a));if(j<0)j=0;pairs.push([a,pool.splice(j,1)[0]])}
+  return{pairs,bad:bad(pairs)};
+}
+function drKO(players,avoid){
+  const n=players.length,size=1<<Math.ceil(Math.log2(n)),b=size-n,mc=size/2;let best=null;
+  for(let t=0;t<150;t++){const sh=shuf(players),o=drPair(sh.slice(b),avoid);
+    if(!best||o.bad<best.bad)best={byeP:sh.slice(0,b),pairs:o.pairs,bad:o.bad};if(!best.bad||!avoid)break}
+  const idx=shuf([...Array(mc).keys()]),r1=Array(mc);
+  idx.slice(0,b).forEach((m,i)=>r1[m]=[sl(best.byeP[i]),{bye:true}]);
+  idx.slice(b).forEach((m,i)=>r1[m]=[sl(best.pairs[i][0]),sl(best.pairs[i][1])]);
+  return{r1,bad:best.bad};
+}
+function drGroups(players,g,avoid){
+  const cap=Math.ceil(players.length/g),G=Array.from({length:g},()=>[]);let order=shuf(players);
+  if(avoid){const c={};order.forEach(p=>{if(tk(p))c[tk(p)]=(c[tk(p)]||0)+1});order.sort((x,y)=>(c[tk(y)]||0)-(c[tk(x)]||0))}
+  order.forEach(p=>{const t=tk(p),o=G.map((m,i)=>({i,size:m.length,same:t?m.filter(q=>tk(q)===t).length:0})).filter(x=>x.size<cap);
+    o.sort((a,b)=>avoid?(a.same-b.same||a.size-b.size||Math.random()-.5):(a.size-b.size||Math.random()-.5));G[o[0].i].push(p)});
+  let bad=0;G.forEach(m=>{const s=new Set();m.forEach(p=>{if(tk(p)){if(s.has(tk(p)))bad++;s.add(tk(p))}})});
+  return{groups:G.map(shuf),bad};
+}
+function drRR(list){ // circle method: every player meets every other once
+  const a=list.slice();if(a.length%2)a.push(null);const m=a.length,rounds=[];
+  for(let r=0;r<m-1;r++){const ms=[];for(let i=0;i<m/2;i++){const x=a[i],y=a[m-1-i];if(x&&y)ms.push([x,y])}rounds.push(ms);a.splice(1,0,a.pop())}
+  return rounds;
+}
+function drFix(pairs){ // keep players from the same group apart in the knockout's first round
+  const same=p=>p[0].g&&p[1].g&&p[0].g===p[1].g;
+  for(let pass=0;pass<5;pass++)pairs.forEach((p,i)=>{if(!same(p))return;
+    for(let j=0;j<pairs.length&&same(p);j++){if(j===i)continue;const q=pairs[j];
+      for(const k of [0,1]){const x=p[1],y=q[k],np=[p[0],y],nq=q.slice();nq[k]=x;if(!same(np)&&!same(nq)){p[1]=y;q[k]=x;break}}}});
+}
+function drKOGroups(groups,q){
+  const seeds=[];for(let t=1;t<=q;t++)groups.forEach(g=>seeds.push({label:t===1?"Winner "+g.name:t===2?"Runner-up "+g.name:`${t}th in ${g.name}`,g:g.name}));
+  const Q=seeds.length,size=1<<Math.ceil(Math.log2(Q));let ord=[1];while(ord.length<size){const n=ord.length*2;ord=ord.flatMap(s=>[s,n+1-s])}
+  const pos=ord.map(s=>s<=Q?seeds[s-1]:{bye:true}),pairs=[];for(let i=0;i<size;i+=2)pairs.push([pos[i],pos[i+1]]);
+  drFix(pairs);return pairs;
+}
+function drBracket(r1){
+  const rounds=[r1.map(p=>({a:p[0],b:p[1]}))];let prev=rounds[0];
+  while(prev.length>1){const nxt=[],r=rounds.length;
+    for(let i=0;i<prev.length;i+=2){const f=k=>{const m=prev[k];return m.b.bye?m.a:m.a.bye?m.b:{from:{r,m:k+1}}};nxt.push({a:f(i),b:f(i+1)})}
+    rounds.push(nxt);prev=nxt}
+  return rounds;
+}
+function drMake(players,cfg){
+  const avoid=cfg.same!=="yes",warn=[],res={format:cfg.format,same:cfg.same,players,created:new Date().toISOString()};
+  const names=players.map(p=>p.name.toLowerCase());if(new Set(names).size<names.length)warn.push("Some names appear more than once. Check the player list.");
+  if(cfg.format==="ko"){const o=drKO(players,avoid);res.rounds=drBracket(o.r1);if(o.bad)warn.push(`${o.bad} first-round match(es) pair teammates. This could not be avoided with these teams.`)}
+  else{const o=drGroups(players,cfg.groups,avoid);res.groups=o.groups.map((m,i)=>({name:"Group "+String.fromCharCode(65+i),players:m,fixtures:drRR(m)}));res.advance=cfg.advance;
+    if(o.bad)warn.push(`${o.bad} teammate pair(s) ended up in the same group and will meet in the group stage. This could not be avoided with these teams.`);
+    res.rounds=drBracket(drKOGroups(res.groups,cfg.advance))}
+  res.warn=warn;return res;
+}
+
+const drSave=async()=>chk(await sb.from("draws").upsert({event_id:DR.ev,state:DR.st,updated_by:S.user.id,updated_at:new Date().toISOString()}));
+async function dr(fn){if(!isAdm()||!live())return;const m=fn(DR.st);if(m)return toast(m);await drSave();render()}
+const rname=(len)=>len===1?"Final":len===2?"Semi-finals":len===4?"Quarter-finals":"Round of "+len*2;
+const slotH=s=>s.bye?`<span class="m">BYE</span>`:s.name?`${E(s.name)}${s.team?`<span class="tm">${E(s.team)}</span>`:""}`:s.label?E(s.label):`<span class="m">Winner R${s.from.r} M${s.from.m}</span>`;
+
+V.draw=async()=>{
+  if(!S.ed)return `<p class="m">No edition yet.</p>`;
+  const {data:evs}=await sb.from("events").select("id,name").eq("edition_id",S.ed.id).order("id");
+  if(!(evs||[]).length)return `<h2>Draw</h2><div class="note">Create an event first on the Event registration tab.</div>`;
+  if(!evs.some(e=>e.id===DR.ev))DR.ev=evs[0].id;
+  const r=await sb.from("draws").select("state").eq("event_id",DR.ev).maybeSingle();
+  const d=drNew();DR.st=Object.assign(d,r.data?.state||{});DR.st.cfg=Object.assign(drNew().cfg,DR.st.cfg||{});
+  const s=DR.st,run=isAdm()&&live();
+  return `<h2>Draw</h2>${live()?"":`<div class="note">${E(S.ed.name)} is archived. The draw is read-only.</div>`}
+  <div class="card"><label>Event</label><select data-chg="drev">${evs.map(e=>`<option value="${e.id}" ${e.id===DR.ev?"selected":""}>${E(e.name)}</option>`).join("")}</select></div>
+  ${run?drSetup(s):""}${s.result?drShow(s.result):`<div class="card m">The draw has not been conducted yet.</div>`}`;
+};
+function drSetup(s){const c=s.cfg,opt=(v,l,cur)=>`<option value="${v}" ${cur===v?"selected":""}>${l}</option>`;
+  return `<div class="card"><h3>Draw setup</h3><form data-f="drgen">
+<div class="g2"><div><label>Tournament format</label><select name="format">${opt("ko","Knockout only",c.format)}${opt("rrko","Round robin and knockout",c.format)}</select></div>
+<div><label>Can teammates face each other in the first round?</label><select name="same">${opt("no","No, keep teammates apart",c.same)}${opt("yes","Yes, allowed",c.same)}</select></div>
+<div><label>Number of groups (round robin and knockout only)</label><input name="groups" type="number" min="2" value="${c.groups}"></div>
+<div><label>Players advancing from each group</label><input name="advance" type="number" min="1" value="${c.advance}"></div></div>
+<label>Players, one per line: Name, Team (team is optional)</label>
+<textarea id="dr_in" name="input" rows="8" placeholder="Rahul Sharma, Thunder XI&#10;Aman Singh, Royals">${E(s.input)}</textarea>
+<div style="margin-top:6px"><button type="button" class="s o" data-act="drimpreg">Add verified players of this event</button><button type="button" class="s o" data-act="drimpauc">Add players from this event’s auction teams</button></div>
+<button class="g">Generate draw</button> ${s.result?`<button type="button" class="o" data-act="drclear">Clear draw</button>`:""}</form></div>`}
+function drShow(r){
+  const real=r.rounds.flat().filter(m=>!m.a.bye&&!m.b.bye).length,gm=(r.groups||[]).reduce((a,g)=>a+g.fixtures.flat().length,0);
+  let h=`<div class="card"><h3>${r.format==="ko"?"Knockout draw":"Round robin and knockout draw"}</h3><div class="m">${r.players.length} players · ${gm?gm+" group matches + ":""}${real} knockout matches · teammates in the first round: ${r.same==="yes"?"allowed":"not allowed"} · drawn ${new Date(r.created).toLocaleString("en-IN")}</div>${(r.warn||[]).map(w=>`<div class="note" style="margin-top:10px">${E(w)}</div>`).join("")}</div>`;
+  if(r.groups)h+=`<h3>Group stage</h3><div class="grid">${r.groups.map(g=>`<div class="card"><h3 style="color:var(--gold2)">${E(g.name)}</h3>${g.players.map(p=>`<div>${slotH(sl(p))}</div>`).join("")}${g.fixtures.map((rd,i)=>`<div class="m" style="margin-top:10px">Matchday ${i+1}</div>${rd.map(m=>`<div style="font-size:14px">${E(m[0].name)} <span class="m">vs</span> ${E(m[1].name)}</div>`).join("")}`).join("")}</div>`).join("")}</div>`;
+  h+=`<h3>Knockout bracket</h3>${r.format==="rrko"?`<p class="m">The top ${r.advance} from each group qualify. Group-stage opponents are kept apart in the first knockout round.</p>`:""}
+<div class="card"><div class="br">${r.rounds.map(rd=>`<div class="rdw"><h4>${rname(rd.length)}</h4><div class="rd">${rd.map((m,i)=>`<div class="mt"><div class="n">M${i+1}</div><div>${slotH(m.a)}</div><div>${slotH(m.b)}</div></div>`).join("")}</div></div>`).join("")}</div></div>`;
+  return h;
+}
+Object.assign(F,{
+  drgen:fd=>dr(s=>{
+    const players=drParse(fd.get("input")),cfg={format:fd.get("format"),same:fd.get("same"),groups:parseInt(fd.get("groups"))||2,advance:parseInt(fd.get("advance"))||1};
+    s.input=fd.get("input");s.cfg=cfg;
+    if(players.length<2)return "Enter at least 2 players.";
+    if(cfg.format==="rrko"){const small=Math.floor(players.length/cfg.groups);
+      if(cfg.groups<2)return "Use at least 2 groups.";
+      if(small<2)return `Need at least ${cfg.groups*2} players for ${cfg.groups} groups.`;
+      if(cfg.advance>small)return `Players advancing per group cannot exceed the smallest group size (${small}).`;
+      if(cfg.groups*cfg.advance<2)return "At least 2 players must advance."}
+    if(s.result&&!confirm("Replace the current draw with a new random draw?"))return;
+    s.result=drMake(players,cfg);toast("Draw generated")})
+});
+Object.assign(A,{
+  async drimpreg(){const cur=$("#dr_in").value;
+    const {data}=await sb.from("participants").select("full_name").eq("event_id",DR.ev).eq("status","verified");
+    dr(s=>{const have=new Set(drParse(cur).map(p=>p.name.toLowerCase())),add=(data||[]).map(r=>r.full_name).filter(n=>!have.has(n.toLowerCase()));
+      s.input=(cur.trim()?cur.trim()+"\n":"")+add.join("\n");toast(`Added ${add.length} verified player(s)`)})},
+  async drimpauc(){const cur=$("#dr_in").value;
+    const {data}=await sb.from("auctions").select("state").eq("event_id",DR.ev).maybeSingle(),ts=data?.state?.teams||[];
+    if(!ts.length)return toast("No auction teams found for this event.");
+    dr(s=>{const have=new Set(drParse(cur).map(p=>p.name.toLowerCase())),add=[];
+      ts.forEach(t=>{if(t.captain&&!have.has(t.captain.toLowerCase()))add.push(`${t.captain}, ${t.name}`);t.squad.forEach(p=>{if(!have.has(p.name.toLowerCase()))add.push(`${p.name}, ${t.name}`)})});
+      s.input=(cur.trim()?cur.trim()+"\n":"")+add.join("\n");toast(`Added ${add.length} player(s) with their teams`)})},
+  drclear(){if(confirm("Clear the current draw?"))dr(s=>{s.result=null})}
+});
+// ==============================================================================
+
 document.addEventListener("submit",async e=>{const f=e.target.dataset.f;if(!f)return;e.preventDefault();const b=e.target.querySelector("button");if(b)b.disabled=true;
   try{await F[f](new FormData(e.target))}catch(err){toast(err.message)}finally{if(b)b.disabled=false}});
 document.addEventListener("click",e=>{
@@ -405,8 +542,9 @@ document.addEventListener("click",e=>{
   const t=e.target.closest("[data-tab]");if(t){S.tab=t.dataset.tab;render();return}
   const m=e.target.closest("[data-mode]");if(m){e.preventDefault();S.mode=m.dataset.mode;S.msg="";render()}});
 document.addEventListener("change",e=>{const k=e.target.dataset.chg,v=e.target.value;
-  if(k==="ed"){S.ed=S.eds.find(x=>x.id===+v);AU.ev=null;AU.loaded=null;try{localStorage.setItem("tc_ed",S.ed.id)}catch{}render()}
+  if(k==="ed"){S.ed=S.eds.find(x=>x.id===+v);AU.ev=null;AU.loaded=null;DR.ev=null;try{localStorage.setItem("tc_ed",S.ed.id)}catch{}render()}
   else if(k==="auev"){AU.ev=+v;AU.loaded=null;render()}
+  else if(k==="drev"){DR.ev=+v;render()}
   else if(k==="autm")au(s=>{s.cur.teamId=v});
   else if(k==="aubid")au(s=>{s.cur.bid=parseFloat(v)||0})});
 sb.auth.onAuthStateChange((ev)=>{if(ev==="SIGNED_IN"&&!S.user)setTimeout(load,0)});
