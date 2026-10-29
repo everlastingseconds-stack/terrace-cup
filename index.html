@@ -940,12 +940,13 @@ V.part=async()=>{
 
 V.mem=async()=>{
   if(!isAdm()) return `<p class="m">Admins only.</p>`;
-  const [pl,rg,fb]=await Promise.all([
+  const [pl,rg,fb,prof]=await Promise.all([
     sb.from("players").select("*").order("full_name"),
     sb.from("registrations").select("player_id,status,events(name,edition_id)"),
-    sb.from("feedback").select("*").order("created_at",{ascending:false})]);
+    sb.from("feedback").select("*").order("created_at",{ascending:false}),
+    S.role==="super"?sb.from("profiles").select("id,email,role"):Promise.resolve({data:[]})]);
   if(pl.error) throw pl.error;
-  const ed=new Map(S.eds.map(x=>[x.id,x.name])),regs=new Map(),fbs=new Map();
+  const ed=new Map(S.eds.map(x=>[x.id,x.name])),regs=new Map(),fbs=new Map(),pr=new Map((prof.data||[]).map(p=>[p.id,p])),sup=S.role==="super";
   (rg.data||[]).forEach(r=>regs.set(r.player_id,[...(regs.get(r.player_id)||[]),r]));
   (fb.data||[]).forEach(f=>fbs.set(f.user_id,[...(fbs.get(f.user_id)||[]),f]));
   const rows=(pl.data||[]).map(p=>{
@@ -956,10 +957,13 @@ V.mem=async()=>{
     <td>${E(p.phone||"—")}<br><span class="m">${E(p.email||"—")}</span></td>
     <td>${E((p.sports||[]).join(", ")||"—")}${p.other_sports?`<div class="m">Also: ${E(p.other_sports)}</div>`:""}</td>
     <td>${rs.map(r=>`<div>${E(r.events?.name)} <span class="m">${E(ed.get(r.events?.edition_id)||"")}</span> <span class="chip ${r.status}">${r.status}</span></div>`).join("")||"—"}</td>
-    <td>${fs.length?`<details><summary>${fs.length} feedback</summary>${fs.map(f=>`<div style="margin-top:6px"><span class="gold" style="font-size:16px">${"★".repeat(f.rating)}</span> <span class="m">${new Date(f.created_at).toLocaleDateString("en-IN")}</span><div>${E(f.message)}</div></div>`).join("")}</details>`:`<span class="m">—</span>`}</td></tr>`}).join("");
+    <td>${fs.length?`<details><summary>${fs.length} feedback</summary>${fs.map(f=>`<div style="margin-top:6px"><span class="gold" style="font-size:16px">${"★".repeat(f.rating)}</span> <span class="m">${new Date(f.created_at).toLocaleDateString("en-IN")}</span><div>${E(f.message)}</div></div>`).join("")}</details>`:`<span class="m">—</span>`}</td>${sup?`<td>${!p.user_id?`<span class="m">No login</span>`:pr.get(p.user_id)?.role==="super"?`<span class="role r-super">Super admin</span>`:`<select data-chg="role" data-uid="${p.user_id}" style="width:auto"><option value="viewer" ${pr.get(p.user_id)?.role==="admin"?"":"selected"}>Viewer</option><option value="admin" ${pr.get(p.user_id)?.role==="admin"?"selected":""}>Admin</option></select>`}</td>`:""}</tr>`}).join("");
+  const adminCard=sup?`<div class="card"><h3>Admins</h3>${(prof.data||[]).filter(p=>p.role==="admin"||p.role==="super").map(p=>`<div class="pr"><span>${E(p.email)} <span class="role ${p.role==="super"?"r-super":"r-admin"}">${p.role==="super"?"Super admin":"Admin"}</span></span>${p.role==="admin"?`<button class="s d" data-act="deladmin" data-id="${p.id}">Remove</button>`:""}</div>`).join("")}
+  <form data-f="addadmin" class="bidrow" style="margin-top:14px"><input name="email" type="email" required placeholder="Email of a signed-up user"><button class="g">Make admin</button></form>
+  <p class="m" style="margin:8px 0 0">The person must have signed in to the portal once. You can also change anyone’s access in the table below.</p></div>`:"";
   return `<h2>Members</h2><p class="m">${(pl.data||[]).length} registered members across all editions.</p>
-  <input data-filt="mem" placeholder="Search by name, phone, email or sport" style="margin-bottom:12px">
-  <div class="card wrap"><table><tr><th>Member</th><th>Contact</th><th>Sports</th><th>Event registrations</th><th>Feedback</th></tr>${rows||`<tr><td colspan="5">${empty("No members yet","")}</td></tr>`}</table></div>`;
+  ${adminCard}<input data-filt="mem" placeholder="Search by name, phone, email or sport" style="margin-bottom:12px">
+  <div class="card wrap"><table><tr><th>Member</th><th>Contact</th><th>Sports</th><th>Event registrations</th><th>Feedback</th>${sup?"<th>Access</th>":""}</tr>${rows||`<tr><td colspan="5">${empty("No members yet","")}</td></tr>`}</table></div>`;
 };
 
 const HEADS=["Venue","Equipment","Prizes and trophies","Food and refreshments","Umpires and officials","Printing and branding","Medical and first aid","Other"];
@@ -1437,6 +1441,23 @@ Object.assign(A,{
   lbx(){const e=$("#lb");if(e)e.remove()},lbn(){lbShow(LB.i+1)},lbp(){lbShow(LB.i-1)}
 });
 document.addEventListener("keydown",e=>{if(!$("#lb"))return;if(e.key==="Escape")A.lbx();else if(e.key==="ArrowRight")A.lbn();else if(e.key==="ArrowLeft")A.lbp()});
+async function setRole(id,role){
+  const r=await sb.from("profiles").update({role}).eq("id",id).select("id");
+  if(r.error)return toast(r.error.message);
+  if(!(r.data||[]).length)return toast("Could not change that role. Check the permissions.");
+  toast(role==="admin"?"Admin access granted":"Admin access removed");render();
+}
+Object.assign(A,{deladmin(id){if(confirm("Remove admin access?"))setRole(id,"viewer")}});
+Object.assign(F,{
+  async addadmin(fd){
+    if(S.role!=="super")return toast("Only the super admin can do that.");
+    const email=fd.get("email").trim().toLowerCase();
+    const r=await sb.from("profiles").update({role:"admin"}).ilike("email",email).neq("role","super").select("id");
+    if(r.error)return toast(r.error.message);
+    if(!(r.data||[]).length)return toast("No signed-up user with that email.");
+    toast("Admin access granted");render();
+  }
+});
 Object.assign(F,{
   async startdate(fd){const d=fd.get("d");if(chk(await sb.from("editions").update({start_date:d}).eq("id",S.ed.id))){S.ed.start_date=d;toast("Start date saved");render()}},
   async addplayer(fd){
@@ -1467,6 +1488,7 @@ document.addEventListener("click",e=>{
   const m=e.target.closest("[data-mode]");if(m){e.preventDefault();S.mode=m.dataset.mode;S.msg="";render()}});
 document.addEventListener("change",e=>{const k=e.target.dataset.chg,v=e.target.value;
   if(k==="ed"){S.ed=S.eds.find(x=>x.id===+v);AU.ev=null;AU.loaded=null;DR.ev=null;try{localStorage.setItem("tc_ed",S.ed.id)}catch{}S.anim=true;render()}
+  else if(k==="role"){if(S.role==="super")setRole(e.target.dataset.uid,v)}
   else if(k==="auev"){AU.ev=+v;AU.loaded=null;render()}
   else if(k==="drev"){DR.ev=+v;render()}
   else if(k==="drfmt")document.querySelectorAll(".grpf").forEach(x=>x.style.display=v==="rrko"?"":"none");
