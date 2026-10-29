@@ -59,6 +59,16 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:9px 8px;
 .mt{background:#0a0a0a;border:1px solid var(--line);border-left:3px solid var(--red);border-radius:6px;font-size:14px}
 .mt div{padding:6px 10px;border-bottom:1px solid var(--line)}.mt div:last-child{border:0}.mt .n{font-size:11px;color:var(--muted);background:#151515}
 .tm{font-size:11px;color:var(--gold);border:1px solid var(--line);border-radius:10px;padding:0 6px;margin-left:6px;white-space:nowrap}
+#drCount{position:fixed;inset:0;background:rgba(0,0,0,.94);display:flex;align-items:center;justify-content:center;text-align:center;z-index:50}
+#drCount .m{font:600 28px "Barlow Condensed",sans-serif;letter-spacing:.06em}
+#drCount .big{font:700 min(48vw,260px) "Barlow Condensed",Impact,sans-serif;line-height:1;color:var(--gold2);text-shadow:0 0 40px var(--red);animation:pop 1s ease-out}
+@keyframes pop{0%{transform:scale(1.7);opacity:0}25%{transform:scale(1);opacity:1}100%{transform:scale(.88);opacity:.55}}
+.spot{text-align:center;border-left-color:var(--gold);animation:flash 1s}
+.spot .pn{font:700 clamp(32px,7vw,56px) "Barlow Condensed",sans-serif;color:var(--gold2)}
+.q{color:var(--muted);letter-spacing:.25em}
+.hl{background:var(--red);color:#fff;padding:1px 8px;border-radius:4px;animation:flash 1s}
+@keyframes flash{0%{opacity:0;transform:translateY(-6px)}100%{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){#drCount .big,.spot,.hl{animation:none}}
 </style>
 </head>
 <body>
@@ -467,13 +477,13 @@ function drMake(players,cfg){
   const names=players.map(p=>p.name.toLowerCase());if(new Set(names).size<names.length)warn.push("Some names appear more than once. Check the player list.");
   if(cfg.format==="ko"){const o=drKO(players,avoid);res.rounds=drBracket(o.r1);if(o.bad)warn.push(`${o.bad} first-round match(es) pair teammates. This could not be avoided with these teams.`)}
   else{const o=drGroups(players,cfg.groups,avoid);res.groups=o.groups.map((m,i)=>({name:"Group "+String.fromCharCode(65+i),players:m,fixtures:drRR(m)}));res.advance=cfg.advance;
-    if(o.bad)warn.push(`${o.bad} teammate pair(s) ended up in the same group and will meet in the group stage. This could not be avoided with these teams.`);
+    if(o.bad)warn.push(cfg.groups===1?"With one group everyone plays everyone, so teammates will meet in the group stage.":`${o.bad} teammate pair(s) ended up in the same group and will meet in the group stage. This could not be avoided with these teams.`);
     res.rounds=drBracket(drKOGroups(res.groups,cfg.advance))}
   res.warn=warn;return res;
 }
 
 const drSave=async()=>chk(await sb.from("draws").upsert({event_id:DR.ev,state:DR.st,updated_by:S.user.id,updated_at:new Date().toISOString()}));
-async function dr(fn){if(!isAdm()||!live())return;const m=fn(DR.st);if(m)return toast(m);await drSave();render()}
+async function dr(fn){if(!isAdm()||!live())return;const m=fn(DR.st);if(m)return toast(m);await drSave();await render()}
 const rname=(len)=>len===1?"Final":len===2?"Semi-finals":len===4?"Quarter-finals":"Round of "+len*2;
 const slotH=s=>s.bye?`<span class="m">BYE</span>`:s.name?`${E(s.name)}${s.team?`<span class="tm">${E(s.team)}</span>`:""}`:s.label?E(s.label):`<span class="m">Winner R${s.from.r} M${s.from.m}</span>`;
 
@@ -487,38 +497,60 @@ V.draw=async()=>{
   const s=DR.st,run=isAdm()&&live();
   return `<h2>Draw</h2>${live()?"":`<div class="note">${E(S.ed.name)} is archived. The draw is read-only.</div>`}
   <div class="card"><label>Event</label><select data-chg="drev">${evs.map(e=>`<option value="${e.id}" ${e.id===DR.ev?"selected":""}>${E(e.name)}</option>`).join("")}</select></div>
-  ${run?drSetup(s):""}${s.result?drShow(s.result):`<div class="card m">The draw has not been conducted yet.</div>`}`;
+  ${run?drSetup(s):""}<div id="drOut">${drBody(s,run)}</div>`;
 };
 function drSetup(s){const c=s.cfg,opt=(v,l,cur)=>`<option value="${v}" ${cur===v?"selected":""}>${l}</option>`;
   return `<div class="card"><h3>Draw setup</h3><form data-f="drgen">
-<div class="g2"><div><label>Tournament format</label><select name="format">${opt("ko","Knockout only",c.format)}${opt("rrko","Round robin and knockout",c.format)}</select></div>
+<div class="g2"><div><label>Tournament format</label><select name="format" data-chg="drfmt">${opt("ko","Knockout only",c.format)}${opt("rrko","Round robin and knockout",c.format)}</select></div>
 <div><label>Can teammates face each other in the first round?</label><select name="same">${opt("no","No, keep teammates apart",c.same)}${opt("yes","Yes, allowed",c.same)}</select></div>
-<div><label>Number of groups (round robin and knockout only)</label><input name="groups" type="number" min="2" value="${c.groups}"></div>
-<div><label>Players advancing from each group</label><input name="advance" type="number" min="1" value="${c.advance}"></div></div>
+<div class="grpf" ${c.format==="rrko"?"":`style="display:none"`}><label>Number of groups (1 or more)</label><input name="groups" type="number" min="1" value="${c.groups}"></div>
+<div class="grpf" ${c.format==="rrko"?"":`style="display:none"`}><label>Players advancing from each group</label><input name="advance" type="number" min="1" value="${c.advance}"></div></div>
 <label>Players, one per line: Name, Team (team is optional)</label>
 <textarea id="dr_in" name="input" rows="8" placeholder="Rahul Sharma, Thunder XI&#10;Aman Singh, Royals">${E(s.input)}</textarea>
 <div style="margin-top:6px"><button type="button" class="s o" data-act="drimpreg">Add verified players of this event</button><button type="button" class="s o" data-act="drimpauc">Add players from this event’s auction teams</button></div>
 <button class="g">Generate draw</button> ${s.result?`<button type="button" class="o" data-act="drclear">Clear draw</button>`:""}</form></div>`}
-function drShow(r){
+const pk=s=>(s.name||"")+"|"+(s.team||"");
+const slotM=(s,rv)=>{if(rv&&s.name&&!rv.shown.has(pk(s)))return `<span class="q">? ? ?</span>`;const h=slotH(s);return rv&&rv.last&&pk(s)===pk(rv.last)?`<span class="hl">${h}</span>`:h};
+function drShow(r,rv){
   const real=r.rounds.flat().filter(m=>!m.a.bye&&!m.b.bye).length,gm=(r.groups||[]).reduce((a,g)=>a+g.fixtures.flat().length,0);
-  let h=`<div class="card"><h3>${r.format==="ko"?"Knockout draw":"Round robin and knockout draw"}</h3><div class="m">${r.players.length} players · ${gm?gm+" group matches + ":""}${real} knockout matches · teammates in the first round: ${r.same==="yes"?"allowed":"not allowed"} · drawn ${new Date(r.created).toLocaleString("en-IN")}</div>${(r.warn||[]).map(w=>`<div class="note" style="margin-top:10px">${E(w)}</div>`).join("")}</div>`;
-  if(r.groups)h+=`<h3>Group stage</h3><div class="grid">${r.groups.map(g=>`<div class="card"><h3 style="color:var(--gold2)">${E(g.name)}</h3>${g.players.map(p=>`<div>${slotH(sl(p))}</div>`).join("")}${g.fixtures.map((rd,i)=>`<div class="m" style="margin-top:10px">Matchday ${i+1}</div>${rd.map(m=>`<div style="font-size:14px">${E(m[0].name)} <span class="m">vs</span> ${E(m[1].name)}</div>`).join("")}`).join("")}</div>`).join("")}</div>`;
-  h+=`<h3>Knockout bracket</h3>${r.format==="rrko"?`<p class="m">The top ${r.advance} from each group qualify. Group-stage opponents are kept apart in the first knockout round.</p>`:""}
-<div class="card"><div class="br">${r.rounds.map(rd=>`<div class="rdw"><h4>${rname(rd.length)}</h4><div class="rd">${rd.map((m,i)=>`<div class="mt"><div class="n">M${i+1}</div><div>${slotH(m.a)}</div><div>${slotH(m.b)}</div></div>`).join("")}</div></div>`).join("")}</div></div>`;
+  let h=rv?`<div class="card spot"><div class="m">Player ${rv.i} of ${rv.n}</div><div class="pn">${E(rv.last.name)}</div>${rv.last.team?`<span class="tm">${E(rv.last.team)}</span>`:""}</div>`:"";
+  h+=`<div class="card"><h3>${r.format==="ko"?"Knockout draw":"Round robin and knockout draw"}</h3><div class="m">${r.players.length} players · ${gm?gm+" group matches + ":""}${real} knockout matches · teammates in the first round: ${r.same==="yes"?"allowed":"not allowed"} · drawn ${new Date(r.created).toLocaleString("en-IN")}</div>${rv?"":(r.warn||[]).map(w=>`<div class="note" style="margin-top:10px">${E(w)}</div>`).join("")}</div>`;
+  if(r.groups)h+=`<h3>Group stage</h3><div class="grid">${r.groups.map(g=>`<div class="card"><h3 style="color:var(--gold2)">${E(g.name)}</h3>${g.players.map(p=>`<div>${slotM(sl(p),rv)}</div>`).join("")}${rv?"":g.fixtures.map((rd,i)=>`<div class="m" style="margin-top:10px">Matchday ${i+1}</div>${rd.map(m=>`<div style="font-size:14px">${E(m[0].name)} <span class="m">vs</span> ${E(m[1].name)}</div>`).join("")}`).join("")}</div>`).join("")}</div>`;
+  h+=`<h3>Knockout bracket</h3>${r.format==="rrko"?`<p class="m">${r.groups.length===1?`The top ${r.advance} from the group qualify and are seeded by league position.`:`The top ${r.advance} from each group qualify. Group-stage opponents are kept apart in the first knockout round.`}</p>`:""}
+<div class="card"><div class="br">${r.rounds.map(rd=>`<div class="rdw"><h4>${rname(rd.length)}</h4><div class="rd">${rd.map((m,i)=>`<div class="mt"><div class="n">M${i+1}</div><div>${slotM(m.a,rv)}</div><div>${slotM(m.b,rv)}</div></div>`).join("")}</div></div>`).join("")}</div></div>`;
   return h;
 }
+function drBody(s,run){
+  const r=s.result;
+  if(!r)return `<div class="card m">The draw has not been conducted yet.</div>`;
+  if(r.revealed===false)return run?`<div class="card"><h3>The draw is sealed</h3><p class="m">${r.players.length} players have been drawn. Start the reveal when everyone is watching: it counts down from 5, then shows one player every second.</p><button class="g" data-act="drreveal">Start the reveal</button></div>`
+    :`<div class="card"><h3>The draw is being conducted</h3><p class="m">It will appear here once it has been revealed. Check back in a moment.</p></div>`;
+  return drShow(r);
+}
+function drOrder(r){const out=[];if(r.groups)r.groups.forEach(g=>g.players.forEach(p=>out.push(sl(p))));else r.rounds[0].forEach(m=>{if(m.a.name)out.push(m.a);if(m.b.name)out.push(m.b)});return out}
+async function drPlay(){
+  const r=DR.st&&DR.st.result,ev=DR.ev;if(!r||DR.playing||!isAdm())return;DR.playing=true;
+  const alive=()=>$("#drOut")&&DR.ev===ev,wait=ms=>new Promise(x=>setTimeout(x,ms)),o=document.createElement("div");o.id="drCount";document.body.appendChild(o);
+  try{
+    for(let n=5;n>=1;n--){if(!alive())return;o.innerHTML=`<div><div class="m">The draw begins in</div><div class="big">${n}</div></div>`;await wait(1000)}
+    o.remove();const ord=drOrder(r),shown=new Set();
+    for(let i=0;i<ord.length;i++){if(!alive())return;shown.add(pk(ord[i]));$("#drOut").innerHTML=drShow(r,{shown,last:ord[i],i:i+1,n:ord.length});if(i<ord.length-1)await wait(1000)}
+    await wait(1000);if(!alive())return;
+    r.revealed=true;DR.st.result=r;await drSave();$("#drOut").innerHTML=drShow(r);toast("Draw complete");
+  }finally{o.remove();DR.playing=false}
+}
 Object.assign(F,{
-  drgen:fd=>dr(s=>{
+  drgen:async fd=>{if(DR.playing)return toast("The reveal is in progress.");DR.fresh=false;await dr(s=>{
     const players=drParse(fd.get("input")),cfg={format:fd.get("format"),same:fd.get("same"),groups:parseInt(fd.get("groups"))||2,advance:parseInt(fd.get("advance"))||1};
     s.input=fd.get("input");s.cfg=cfg;
     if(players.length<2)return "Enter at least 2 players.";
     if(cfg.format==="rrko"){const small=Math.floor(players.length/cfg.groups);
-      if(cfg.groups<2)return "Use at least 2 groups.";
+      if(cfg.groups<1)return "Use at least 1 group.";
       if(small<2)return `Need at least ${cfg.groups*2} players for ${cfg.groups} groups.`;
       if(cfg.advance>small)return `Players advancing per group cannot exceed the smallest group size (${small}).`;
-      if(cfg.groups*cfg.advance<2)return "At least 2 players must advance."}
+      if(cfg.groups*cfg.advance<2)return cfg.groups===1?"With one group, at least 2 players must advance to the knockout.":"At least 2 players must advance."}
     if(s.result&&!confirm("Replace the current draw with a new random draw?"))return;
-    s.result=drMake(players,cfg);toast("Draw generated")})
+    s.result=drMake(players,cfg);s.result.revealed=false;DR.fresh=true;toast("Draw generated")});if(DR.fresh){DR.fresh=false;drPlay()}}
 });
 Object.assign(A,{
   async drimpreg(){const cur=$("#dr_in").value;
@@ -531,7 +563,8 @@ Object.assign(A,{
     dr(s=>{const have=new Set(drParse(cur).map(p=>p.name.toLowerCase())),add=[];
       ts.forEach(t=>{if(t.captain&&!have.has(t.captain.toLowerCase()))add.push(`${t.captain}, ${t.name}`);t.squad.forEach(p=>{if(!have.has(p.name.toLowerCase()))add.push(`${p.name}, ${t.name}`)})});
       s.input=(cur.trim()?cur.trim()+"\n":"")+add.join("\n");toast(`Added ${add.length} player(s) with their teams`)})},
-  drclear(){if(confirm("Clear the current draw?"))dr(s=>{s.result=null})}
+  drreveal(){if(!DR.playing&&isAdm()&&live())drPlay()},
+  drclear(){if(DR.playing)return toast("The reveal is in progress.");if(confirm("Clear the current draw?"))dr(s=>{s.result=null})}
 });
 // ==============================================================================
 
@@ -545,6 +578,7 @@ document.addEventListener("change",e=>{const k=e.target.dataset.chg,v=e.target.v
   if(k==="ed"){S.ed=S.eds.find(x=>x.id===+v);AU.ev=null;AU.loaded=null;DR.ev=null;try{localStorage.setItem("tc_ed",S.ed.id)}catch{}render()}
   else if(k==="auev"){AU.ev=+v;AU.loaded=null;render()}
   else if(k==="drev"){DR.ev=+v;render()}
+  else if(k==="drfmt")document.querySelectorAll(".grpf").forEach(x=>x.style.display=v==="rrko"?"":"none");
   else if(k==="autm")au(s=>{s.cur.teamId=v});
   else if(k==="aubid")au(s=>{s.cur.bid=parseFloat(v)||0})});
 sb.auth.onAuthStateChange((ev)=>{if(ev==="SIGNED_IN"&&!S.user)setTimeout(load,0)});
