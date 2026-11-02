@@ -226,6 +226,9 @@ main.anim .grid>:nth-child(5){animation-delay:.24s}main.anim .grid>:nth-child(6)
 .umb{margin:26px 0 8px}.umbh{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap;border-bottom:2px solid var(--red);padding-bottom:8px;margin-bottom:14px}
 .umbs{border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:8px;padding:14px;margin:14px 0;background:rgba(255,255,255,.02)}
 .umbd{border:1px dashed var(--line);border-radius:6px;padding:12px;margin-top:12px}.umbs h4,.umbd h4{margin:0 0 6px;color:var(--gold2)}
+.ureg{margin:14px 0;padding:14px;border:1px solid var(--line);border-left:3px solid var(--red);background:#0d0d0d}
+.chk{display:flex;gap:10px;align-items:center;margin:6px 0;font-weight:400;color:var(--text);cursor:pointer}.chk input{width:auto;margin:0;flex:none}
+.pick{max-height:240px;overflow:auto;border:1px solid var(--line);border-radius:6px;padding:6px 10px;background:#0a0a0a}
 </style>
 </head>
 <body>
@@ -760,6 +763,9 @@ const fmtFields=(c,px="")=>{c=Object.assign({players:"",format:"ko",groups:2,adv
   <div class="fmtprev">${c.players?fmtPrev(c):`<p class="m" style="margin:10px 0">Enter the number of ${u==="pairs"?"players":u} to see how many progress from each round.</p>`}</div></div>`};
 const fmtExtras=v=>{const l=fmtLine(v.format_config);
   return (l?`<div class="m" style="font-size:13px;margin-bottom:6px">${E(l)}</div>`:"")+(isAdm()&&live()?`<details><summary>${v.format_config?"Edit format":"Set format"}</summary><form data-f="evfmt" data-fmtform><input type="hidden" name="id" value="${v.id}"><input type="hidden" name="kind" value="${E(v.kind||"")}">${fmtFields(Object.assign({unit:unitOf(v.kind)},v.format_config||{players:v.capacity||""}))}<button class="g">Save format</button></form></details>`:"")};
+// ---------- an umbrella event (or a sport with singles + doubles) counts as ONE event ----------
+const unitKey=v=>v.umbrella_key||v.group_key||("e"+v.id);
+const unitFee=items=>{const u=items.find(x=>x.umbrella_fee!=null);return u?+u.umbrella_fee:Math.max(0,...items.map(x=>+x.fee||0))};
 // ---------- event banner: live and upcoming events in a carousel ----------
 const BN={c:{},i:0,t:0,p:0,hold:false,sig:""};
 const IST="Asia/Kolkata";
@@ -767,17 +773,19 @@ const bnWhen=ts=>new Date(ts).toLocaleString("en-IN",{timeZone:IST,weekday:"shor
 const bnLocal=ts=>ts?new Date(ts).toLocaleString("sv-SE",{timeZone:IST}).replace(" ","T").slice(0,16):"";
 const bnIso=v=>v?`${v}:00+05:30`:null;
 // An event with no end time is treated as running for four hours after it starts.
-function bnItems(rows){const now=Date.now();
-  return (rows||[]).map(e=>{const s=Date.parse(e.starts_at),en=e.ends_at?Date.parse(e.ends_at):s+4*36e5;return{...e,s,live:now>=s&&now<en,done:now>=en}})
-    .filter(e=>!e.done&&!isNaN(e.s)).sort((a,b)=>(b.live-a.live)||a.s-b.s).slice(0,8)}
+function bnItems(rows){const now=Date.now(),g=new Map();
+  (rows||[]).forEach(e=>{const st=Date.parse(e.starts_at);if(isNaN(st))return;const en=e.ends_at?Date.parse(e.ends_at):st+4*36e5,k=unitKey(e);
+    let u=g.get(k);if(!u){u={id:k,name:e.umbrella_name||e.group_name||e.name,umb:!!e.umbrella_key,s:st,en,venue:e.venue||"",liveId:null,firstId:e.id,sport:e.group_name||e.name};g.set(k,u)}
+    if(st<u.s){u.s=st;u.firstId=e.id}if(en>u.en)u.en=en;if(!u.venue&&e.venue)u.venue=e.venue;if(now>=st&&now<en&&u.liveId==null)u.liveId=e.id});
+  return [...g.values()].map(u=>({...u,live:now>=u.s&&now<u.en,done:now>=u.en})).filter(u=>!u.done).sort((a,b)=>(b.live-a.live)||a.s-b.s).slice(0,8)}
 const bnCur=()=>{const c=S.ed&&S.ed.is_active&&BN.c[S.ed.id];return c?bnItems(c.d):[]};
 const bnSig=a=>a.map(x=>x.id+(x.live?"L":"U")).join();
 function bnCountdown(s,live){
   if(live){const m=Math.max(0,Math.floor((Date.now()-s)/6e4));return `<span class="hc-el">Started ${m<60?m+" min":Math.floor(m/60)+"h "+m%60+"m"} ago</span>`}
   const t=Math.max(0,Math.floor((s-Date.now())/1000));
   return [["Days",Math.floor(t/86400)],["Hrs",Math.floor(t%86400/3600)],["Min",Math.floor(t%3600/60)],["Sec",t%60]].map(([l,v])=>`<div><b>${String(v).padStart(2,"0")}</b><span>${l}</span></div>`).join("")}
-function bnSlide(it){const sp=sportOf(it.name);
-  return `<div class="hc-s${it.live?" lv":""}" style="--acc:${sp.c}" data-act="hcgo" data-id="${it.id}"><div class="hc-top">${it.live?`<span class="live"><i></i>LIVE NOW</span>`:`<span class="hc-up">UPCOMING</span>`}<span class="hc-ic">${sp.i}</span></div>
+function bnSlide(it){const sp=it.umb?{c:"#d9a521",i:TROPHY[3]}:sportOf(it.sport);
+  return `<div class="hc-s${it.live?" lv":""}" style="--acc:${sp.c}" data-act="hcgo" data-id="${E(it.id)}"><div class="hc-top">${it.live?`<span class="live"><i></i>LIVE NOW</span>`:`<span class="hc-up">UPCOMING</span>`}<span class="hc-ic">${sp.i}</span></div>
   <div class="hc-nm">${E(it.name)}</div><div class="hc-meta">${E(bnWhen(it.s))}${it.venue?" · "+E(it.venue):""}</div>
   <div class="hc-cd" data-s="${it.s}" data-l="${it.live?1:0}">${bnCountdown(it.s,it.live)}</div>
   <span class="hc-go">${it.live?"Follow the scores →":"Event details →"}</span></div>`}
@@ -798,7 +806,7 @@ function bnTick(){const els=document.querySelectorAll("#hc .hc-cd");if(!els.leng
   if(bnSig(bnCur())!==BN.sig)bnPaint()}
 async function bnLoad(){const ed=S.ed;if(!ed||!ed.is_active)return;
   const c=BN.c[ed.id];if(c&&Date.now()-c.at<60000)return;
-  const r=await sb.from("events").select("id,name,starts_at,ends_at,venue").eq("edition_id",ed.id).not("starts_at","is",null).order("starts_at");
+  const r=await sb.from("events").select("id,name,starts_at,ends_at,venue,umbrella_key,umbrella_name,group_key,group_name").eq("edition_id",ed.id).not("starts_at","is",null).order("starts_at");
   if(r.error)return; // the schedule columns are not in the database yet, so the banner stays hidden
   BN.c[ed.id]={at:Date.now(),d:r.data||[]}}
 async function bnInit(){
@@ -833,9 +841,9 @@ function heroTick(){
 }
 async function heroLoad(){
   const ed=S.ed,c=HERO.c[ed.id];if(c&&Date.now()-c.at<60000)return c.d;
-  const [ev,pr]=await Promise.all([sb.from("events").select("id",{count:"exact",head:true}).eq("edition_id",ed.id),
+  const [ev,pr]=await Promise.all([sb.from("events").select("id,umbrella_key,group_key").eq("edition_id",ed.id),
     sb.from("participants").select("full_name").eq("edition_id",ed.id).eq("status","verified")]);
-  const rows=pr.data||[],d={events:ev.count||0,players:new Set(rows.map(r=>r.full_name)).size,entries:rows.length};
+  const rows=pr.data||[],d={events:new Set((ev.data||[]).map(unitKey)).size,players:new Set(rows.map(r=>r.full_name)).size,entries:rows.length};
   HERO.c[ed.id]={at:Date.now(),d};return d;
 }
 async function heroInit(){
@@ -1021,37 +1029,53 @@ V.ev=async()=>{
     <p class="m">Pay ${R(v.fee)} by scanning, then enter the transaction ID.</p>
     <form data-f="reg"><input type="hidden" name="event_id" value="${v.id}"><label>UPI transaction ID (UTR)</label><input name="utr" required>
     <label>Screenshot (optional)</label><input type="file" name="proof" accept="image/*"><button>Submit payment</button></form></details>`};
+  const unitReg=u=>{const rows=u.items,fee=unitFee(rows),mine=rows.filter(r=>st.has(r.id)),feeTxt=fee>0?R(fee):"FREE",key=unitKey(rows[0]);
+    const adminFee=adm?`<details><summary>Edit event fee</summary><form data-f="unitfee"><input type="hidden" name="key" value="${E(key)}"><label>Fee for the whole event (₹)</label><input name="fee" type="number" min="0" value="${fee}"><button class="g">Save fee</button></form></details>`:"";
+    const head=`<div class="ureg"><div class="evsub-h"><b>Event registration</b><span class="gold" style="font-size:22px">${feeTxt}</span></div><p class="m" style="font-size:13px;margin:0 0 6px">One registration and one fee cover the whole event.</p>`;
+    if(mine.length){const sts=mine.map(r=>st.get(r.id)),sx=sts.includes("pending")?"pending":sts.includes("verified")?"verified":"rejected";
+      return head+`<span class="chip ${sx}">${sx}</span><div class="m" style="font-size:13px;margin-top:6px">Entered: ${E(mine.map(r=>r.name).join(", "))}</div>${adminFee}</div>`}
+    if(!live())return head+`<span class="m">Closed</span>${adminFee}</div>`;
+    const boxes=rows.map(v=>{const n=cn.get(v.id)||0,c=+v.capacity||0,full=c&&n>=c;
+      return `<label class="chk"><input type="checkbox" name="events" value="${v.id}" ${full?"disabled":""}> ${E(v.name)}${full?` <span class="m">(full)</span>`:""}</label>`}).join("");
+    return head+`<details><summary>Register and pay</summary>
+      ${fee>0?(qr?`<img src="${qr}" alt="GPay QR" style="width:200px;background:#fff;padding:8px;border-radius:6px;margin-top:8px"><p class="m">Pay ${feeTxt} once by scanning, then enter the transaction ID.</p>`:`<p class="m">The payment QR has not been uploaded yet.</p>`):`<p class="m">There is no fee for this event.</p>`}
+      <form data-f="regunit"><label>Which disciplines will you play? Pick at least one.</label>${boxes}
+      <p class="m" style="font-size:13px">Doubles partners are decided at the draw. In team disciplines you register as a player and teams are formed at the auction.</p>
+      ${fee>0?`<label>UPI transaction ID (UTR)</label><input name="utr" required><label>Screenshot (optional)</label><input type="file" name="proof" accept="image/*">`:""}
+      <button>${fee>0?"Submit payment":"Register"}</button></form></details>${adminFee}</div>`};
   const grpCard=g=>{const sp=sportOf(g.name);
     return `<div class="card evc" style="--acc:${sp.c}"><div class="evh"><span class="evi">${sp.i}</span><div><h3>${E(g.name)}</h3><div class="m evs">${sp.n} · ${g.umb?g.items.length+" discipline"+(g.items.length>1?"s":""):"Singles and doubles"}</div></div></div>`+
     g.items.map(v=>{const n=cn.get(v.id)||0,c=+v.capacity||0,t=`font-size:13px;margin-bottom:6px`,dbl=v.kind==="doubles";
-      return `<div class="evsub"><div class="evsub-h"><b>${E(v.discipline||(dbl?"Doubles":"Singles"))}</b><span class="m">${+v.fee>0?R(v.fee):"FREE"}</span></div>${v.discipline?`<div class="m" style="font-size:13px;margin-bottom:6px">${E([v.category,partLabel(v)].filter(Boolean).join(" · "))}</div>`:""}
+      return `<div class="evsub"><div class="evsub-h"><b>${E(v.discipline||(dbl?"Doubles":"Singles"))}</b><span class="m">Included</span></div>${v.discipline?`<div class="m" style="font-size:13px;margin-bottom:6px">${E([v.category,partLabel(v)].filter(Boolean).join(" · "))}</div>`:""}
       ${c?`<div class="sb"><i style="width:${Math.min(100,Math.round(n/c*100))}%"></i></div><div class="m" style="${t}">${n>=c?"Full":`${n} of ${c} spots filled`}</div>`:`<div class="m" style="${t}">${n} entered</div>`}
-      ${fmtExtras(v)}${schedExtras(v)}${regBlock(v)}</div>`}).join("")+
+      ${fmtExtras(v)}${schedExtras(v)}</div>`}).join("")+(g.umb?"":unitReg({items:g.items}))+
     (adm?`<button class="s d" style="margin-top:14px" data-act="delgrp" data-id="${E(g.key)}">${g.umb?"Delete sport":"Delete event"}</button>`:"")+`</div>`};
-  h+=umbSections(cards,adm,grpCard)+`<div class="grid">`+cards.filter(c=>!c.umb).map(c=>c.items?grpCard(c):`${evTop(c.v,cn.get(c.v.id)||0)}${regBlock(c.v)}${adm?`<button class="s d" style="margin-top:12px" data-act="delev" data-id="${c.v.id}">Delete event</button>`:""}</div>`).join("")+
+  h+=umbSections(cards,adm,grpCard,unitReg)+`<div class="grid">`+cards.filter(c=>!c.umb).map(c=>c.items?grpCard(c):`${evTop(c.v,cn.get(c.v.id)||0)}${regBlock(c.v)}${adm?`<button class="s d" style="margin-top:12px" data-act="delev" data-id="${c.v.id}">Delete event</button>`:""}</div>`).join("")+
     (items.length?"":empty("No events yet","Events added by the organisers will appear here."))+`</div>`;
   if(isAdm()&&live()){
     h+=`${evModeBar()}${EV.mode==="multi"?umbForm():`<form class="card" data-f="event" data-fmtform>
     <div class="g2"><div><label>Event name</label><input name="name" required></div>
     <div><label>Event type</label><select name="kind"><option value="singles">Singles</option><option value="doubles">Doubles</option><option value="both">Singles and doubles</option><option value="team">Team based</option></select></div></div>
     <div class="g2"><div><label>Fee per player (₹)</label><input name="fee" type="number" min="0" value="0"></div>
-    <div data-k="both" style="display:none"><label>Doubles fee per player (₹)</label><input name="dfee" type="number" min="0" placeholder="Same as the fee"></div></div>
+    </div>
     <div data-k="singles both"><h4 style="margin:14px 0 4px">Singles</h4>${fmtFields({unit:"players"},"s_")}</div>
     <div data-k="doubles both" style="display:none"><h4 style="margin:14px 0 4px">Doubles</h4>${fmtFields({unit:"pairs"},"d_")}</div>
     <div data-k="team" style="display:none"><h4 style="margin:14px 0 4px">Teams</h4><p class="m">Players register one by one and are placed into teams at the auction.</p>${fmtFields({unit:"teams"},"t_")}</div>
     <button class="g">Add event</button></form>`}`;
     const pls=await sb.from("players").select("id,full_name,phone").order("full_name");
     h+=`<h3 style="margin-top:24px">Add a player to an event</h3><form class="card" data-f="addplayer"><p class="m">For people who are not registering on the portal. The entry is marked verified straight away.</p>
-    <div class="g2"><div><label>Event</label><select name="event_id" required>${(ev.data||[]).map(v=>`<option value="${v.id}">${E(v.name)}</option>`).join("")}</select></div>
+    <div class="g2"><div><label>Event and disciplines</label><div class="pick">${[...new Set(items.map(unitKey))].map(k=>{const rs=items.filter(x=>unitKey(x)===k);return rs.length>1||rs[0].umbrella_key?`<div class="m" style="margin-top:6px"><b>${E(rs[0].umbrella_name||rs[0].group_name||rs[0].name)}</b></div>`+rs.map(v=>`<label class="chk"><input type="checkbox" name="event_ids" value="${v.id}"> ${E(v.name)}</label>`).join(""):`<label class="chk"><input type="checkbox" name="event_ids" value="${rs[0].id}"> ${E(rs[0].name)}</label>`}).join("")}</div></div>
     <div><label>Player</label><select name="player_id"><option value="">New player (fill details below)</option>${(pls.data||[]).map(p=>`<option value="${p.id}">${E(p.full_name)}${p.phone?" · "+E(p.phone):""}</option>`).join("")}</select></div></div>
     <div class="g2"><div><label>First name</label><input name="first_name"></div><div><label>Last name</label><input name="last_name"></div><div><label>Phone</label><input name="phone" type="tel"></div><div><label>Email (optional)</label><input name="email" type="email"></div></div>
     <div class="g2"><div><label>Payment</label><select name="mode"><option value="cash">Cash received</option><option value="upi">UPI, paid outside the portal</option><option value="waived">Fee waived</option></select></div><div><label>Reference (optional)</label><input name="ref" placeholder="Receipt no. or UPI ID"></div></div>
     <button class="g">Add to event</button></form>`;
-    const {data}=await sb.from("registrations").select("id,utr,proof_path,players(full_name),events!inner(name,edition_id)").eq("status","pending").eq("events.edition_id",S.ed.id);
-    const rows=await Promise.all((data||[]).map(async r=>{
-      const u=r.proof_path?(await sb.storage.from("payment-proofs").createSignedUrl(r.proof_path,3600)).data?.signedUrl:null;
-      return `<tr><td>${E(r.players?.full_name)}</td><td>${E(r.events?.name)}</td><td>${E(r.utr)}</td><td>${u?`<a href="${u}" target="_blank" rel="noopener">View</a>`:"—"}</td>
-      <td style="white-space:nowrap"><button class="s g" data-act="verified" data-id="${r.id}">Verify</button><button class="s d" data-act="rejected" data-id="${r.id}">Reject</button></td></tr>`}));
+    const {data}=await sb.from("registrations").select("id,utr,proof_path,bundle_id,players(full_name),events!inner(name,edition_id,umbrella_name,group_name)").eq("status","pending").eq("events.edition_id",S.ed.id);
+    const gm=new Map();(data||[]).forEach(r=>{const k=r.bundle_id?"b:"+r.bundle_id:"r:"+r.id,g=gm.get(k)||{k,rs:[]};g.rs.push(r);gm.set(k,g)});
+    const rows=await Promise.all([...gm.values()].map(async g=>{
+      const r=g.rs.find(x=>!String(x.utr).includes("~"))||g.rs[0],pf=g.rs.find(x=>x.proof_path),u=pf?(await sb.storage.from("payment-proofs").createSignedUrl(pf.proof_path,3600)).data?.signedUrl:null;
+      const nm=[...new Set(g.rs.map(x=>x.events?.umbrella_name||x.events?.group_name||x.events?.name))].join(", "),multi=g.rs.length>1||g.rs[0].events?.umbrella_name;
+      return `<tr><td>${E(r.players?.full_name)}</td><td>${E(nm)}${multi?`<div class="m" style="font-size:12px">${E(g.rs.map(x=>x.events?.name).join(", "))}</div>`:""}</td><td>${E(String(r.utr).split("~")[0])}</td><td>${u?`<a href="${u}" target="_blank" rel="noopener">View</a>`:"—"}</td>
+      <td style="white-space:nowrap"><button class="s g" data-act="verifyg" data-id="${E(g.k)}">Verify</button><button class="s d" data-act="rejectg" data-id="${E(g.k)}">Reject</button></td></tr>`}));
     h+=`<h3>Payment verification</h3><div class="card wrap">${rows.length?`<table><tr><th>Player</th><th>Event</th><th>UTR</th><th>Proof</th><th></th></tr>${rows.join("")}</table>`:`${empty("All caught up","No payments are waiting for verification.")}`}</div>`;
   }
   if(S.role==="super"&&live()) h+=`<form class="card" data-f="qr"><h3>GPay QR for ${E(S.ed.name)}</h3><input type="file" name="qr" accept="image/*" required><button class="g">${qr?"Replace QR":"Upload QR"}</button></form>`;
@@ -1334,9 +1358,9 @@ const F={
       return{row:{edition_id:S.ed.id,name:nm,fee:f,capacity:k==="team"?null:(c.cap||c.players),format_config:c,kind:k}}};
     let parts;
     if(kind==="both"){
-      const gk=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():Date.now()+"-"+Math.random().toString(36).slice(2),dfee=fd.get("dfee")===""?fee:(+fd.get("dfee")||0);
+      const gk=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():Date.now()+"-"+Math.random().toString(36).slice(2),dfee=fee;
       parts=[mk("s_","singles",`${name} – Singles`,fee),mk("d_","doubles",`${name} – Doubles`,dfee)];
-      parts.forEach(p=>{if(p.row){p.row.group_key=gk;p.row.group_name=name}});
+      parts.forEach(p=>{if(p.row){p.row.group_key=gk;p.row.group_name=name;p.row.umbrella_fee=fee}});
     }else parts=[mk(kind==="team"?"t_":kind==="doubles"?"d_":"s_",kind,name,fee)];
     const bad=parts.find(p=>p.err);if(bad)return toast(bad.err);
     if(chk(await sb.from("events").insert(parts.map(p=>p.row))))render()},
@@ -1350,6 +1374,24 @@ const F={
     const dup=picks.filter(p=>have.some(a=>a.medal===p[0])).map(p=>p[0]);
     if(dup.length&&!confirm(`${label} already has a ${dup.join(" and ")} medal. Add another (for example after a tie)?`))return;
     if(chk(await sb.from("medal_awards").insert(picks.map(p=>({edition_id:S.ed.id,team:p[1],medal:p[0],label,created_by:S.user.id})))))render();
+  },
+  async regunit(fd){
+    const ids=fd.getAll("events").map(Number).filter(Boolean);if(!ids.length)return toast("Pick at least one discipline.");
+    const rows=(EV.list||[]).filter(x=>ids.includes(x.id));if(!rows.length)return toast("Those disciplines could not be found. Reload and try again.");
+    const u=unitKey(rows[0]);if(rows.some(r=>unitKey(r)!==u))return toast("Pick disciplines from one event.");
+    const fee=unitFee((EV.list||[]).filter(x=>unitKey(x)===u));let utr=(fd.get("utr")||"").trim();
+    if(fee>0&&!utr)return toast("Enter the transaction ID.");if(!utr)utr=`FREE-${S.player.id}-${Date.now()}`;
+    let proof=null;const f=fd.get("proof");
+    if(f&&f.size){proof=`${S.user.id}/${Date.now()}-${safe(f.name)}`;if(!chk(await upload("payment-proofs",proof,f)))return}
+    const bundle=ids.length>1?umbKey():null;
+    const r=await sb.from("registrations").insert(ids.map((id,i)=>({event_id:id,player_id:S.player.id,utr:i?`${utr}~${i}`:utr,proof_path:i?null:proof,...(bundle?{bundle_id:bundle}:{})})));
+    if(r.error){toast(r.error.code==="23505"?"This transaction ID, or an entry for one of these disciplines, already exists.":r.error.message);return}
+    toast("Submitted. Waiting for admin check");render();
+  },
+  async unitfee(fd){
+    if(!isAdm()||!live())return;const key=fd.get("key"),fee=+fd.get("fee")||0,rows=(EV.list||[]).filter(x=>unitKey(x)===key);if(!rows.length)return;
+    const col=rows[0].umbrella_key?"umbrella_key":rows[0].group_key?"group_key":"id";
+    if(chk(await sb.from("events").update({fee,umbrella_fee:fee}).eq(col,col==="id"?rows[0].id:key))){HERO.c={};render()}
   },
   async evsched(fd){
     const id=+fd.get("id"),st=bnIso(fd.get("starts")),en=bnIso(fd.get("ends"));
@@ -1377,11 +1419,13 @@ const A={
   async delgrp(key){const it=EV.list.filter(e=>e.group_key===key);if(it.length)await delEvents(it.map(e=>e.id),it[0].group_name||it[0].name)},
   async delmedal(id){if(!isAdm()||!live())return;if(!confirm("Remove this medal?"))return;if(chk(await sb.from("medal_awards").delete().eq("id",id)))render()},
   hcprev(){bnGo(BN.i-1)},hcnext(){bnGo(BN.i+1)},hcdot(i){bnGo(+i)},
-  hcgo(id){const it=bnCur().find(x=>x.id===+id);if(it&&it.live){SC.pe=+id;S.tab="score"}else S.tab="ev";S.anim=true;render();scrollTo({top:0,behavior:"smooth"})},
+  hcgo(id){const it=bnCur().find(x=>String(x.id)===String(id));if(it&&it.live){SC.pe=it.liveId||it.firstId;S.tab="score"}else S.tab="ev";S.anim=true;render();scrollTo({top:0,behavior:"smooth"})},
   async evschedclear(id){if(chk(await sb.from("events").update({starts_at:null,ends_at:null,venue:null}).eq("id",+id))){BN.c={};render()}},
   async out(){await scReset();await sb.auth.signOut();S.user=null;S.mode="in";S.msg="";render()},
   google(){sb.auth.signInWithOAuth({provider:"google",options:{redirectTo:location.origin+location.pathname}})},
   async verified(id){if(chk(await sb.from("registrations").update({status:"verified"}).eq("id",id))){HERO.c={};render()}},
+  async verifyg(k){const q=sb.from("registrations").update({status:"verified"});if(chk(k.startsWith("b:")?await q.eq("bundle_id",k.slice(2)):await q.eq("id",+k.slice(2)))){HERO.c={};render()}},
+  async rejectg(k){const q=sb.from("registrations").update({status:"rejected"});if(chk(k.startsWith("b:")?await q.eq("bundle_id",k.slice(2)):await q.eq("id",+k.slice(2))))render()},
   async rejected(id){if(chk(await sb.from("registrations").update({status:"rejected"}).eq("id",id)))render()},
   async delexp(id){if(confirm("Delete this expense?")&&chk(await sb.from("expenses").delete().eq("id",id)))render()},
   async delphoto(id){if(confirm("Remove this photo?")&&chk(await sb.from("photos").delete().eq("id",id)))render()},
@@ -1864,7 +1908,7 @@ Object.assign(F,{
   async startdate(fd){const d=fd.get("d");if(chk(await sb.from("editions").update({start_date:d}).eq("id",S.ed.id))){S.ed.start_date=d;toast("Start date saved");render()}},
   async addplayer(fd){
     if(!isAdm()||!live())return toast("Only admins can add players to a live edition.");
-    const event_id=+fd.get("event_id");if(!event_id)return toast("Pick an event.");
+    const ids=fd.getAll("event_ids").map(Number).filter(Boolean);if(!ids.length)return toast("Pick at least one event or discipline.");
     let pid=+fd.get("player_id")||null;
     if(!pid){
       const first=fd.get("first_name").trim(),last=fd.get("last_name").trim(),phone=fd.get("phone").trim();
@@ -1873,8 +1917,8 @@ Object.assign(F,{
       if(r.error)return toast(r.error.message);
       pid=r.data.id;
     }
-    const mode=fd.get("mode"),ref=fd.get("ref").trim();
-    const r=await sb.from("registrations").insert({event_id,player_id:pid,utr:ref||`ADMIN-${mode.toUpperCase()}-${Date.now()}`,status:"verified",payment_mode:mode,added_by:S.user.id});
+    const mode=fd.get("mode"),ref=fd.get("ref").trim(),base=ref||`ADMIN-${mode.toUpperCase()}-${Date.now()}`,bundle=ids.length>1?umbKey():null;
+    const r=await sb.from("registrations").insert(ids.map((id,i)=>({event_id:id,player_id:pid,utr:i?`${base}~${i}`:base,status:"verified",payment_mode:mode,added_by:S.user.id,...(bundle?{bundle_id:bundle}:{})})));
     if(r.error)return toast(r.error.code==="23505"?"That player is already registered for this event, or the reference is already used.":r.error.message);
     toast("Player added to the event");HERO.c={};render();
   }
@@ -1895,12 +1939,12 @@ const UMB_DISC={"Badminton":RAQ,"Table tennis":RAQ,
   "Darts":[["Singles","Open","individual"],["Doubles","Open","pair"]],"Carrom":[["Singles","Open","individual"],["Doubles","Open","pair"]]};
 const umbDisc=()=>({name:"",cat:"Open",part:"individual",size:"5",fee:"0",n:"8",format:"ko",groups:"2",advance:"2"});
 const umbSport=i=>({sport:UMB_SPORTS[i%UMB_SPORTS.length],custom:"",discs:[umbDisc()]});
-const UMB={name:"",venue:"",sports:[umbSport(0)]};
+const UMB={name:"",venue:"",fee:"0",sports:[umbSport(0)]};
 const partLabel=v=>v.kind==="team"?`Team of ${v.team_size||"?"} players`:v.kind==="doubles"?"Pair (2 players)":"Individual";
 const umbKey=()=>(window.crypto&&crypto.randomUUID)?crypto.randomUUID():Date.now()+"-"+Math.random().toString(36).slice(2);
 function umbRead(){ // copy what is typed in the form into UMB so nothing is lost when blocks are rebuilt
   const f=document.querySelector("form[data-f=umb]");if(!f)return;const fd=new FormData(f),out=[];
-  UMB.name=fd.get("uname")||"";UMB.venue=fd.get("uvenue")||"";
+  UMB.name=fd.get("uname")||"";UMB.venue=fd.get("uvenue")||"";UMB.fee=fd.get("ufee")||"0";
   for(let si=0;fd.has("sp"+si);si++){const s={sport:fd.get("sp"+si),custom:fd.get("spc"+si)||"",discs:[]};
     for(let di=0;fd.has(`dn${si}_${di}`);di++){const p=`${si}_${di}`,x=`x${p}_`;
       s.discs.push({name:fd.get("dn"+p),cat:fd.get("dc"+p),part:fd.get("dp"+p),size:fd.get("dt"+p)||"5",fee:fd.get("df"+p),n:fd.get(x+"players")||"",format:fd.get(x+"format")||"ko",groups:fd.get(x+"groups")||"2",advance:fd.get(x+"advance")||"1"})}
@@ -1915,7 +1959,7 @@ function umbDiscHTML(si,di,d){
 <div><label>Category</label><select name="dc${p}">${UMB_CATS.map(c=>`<option ${c===d.cat?"selected":""}>${c}</option>`).join("")}</select></div>
 <div><label>Individual, pair or team?</label><select name="dp${p}" data-umb="part" data-si="${si}" data-di="${di}" data-prev="${d.part}">${UMB_PARTS.map(([v,l])=>`<option value="${v}" ${v===d.part?"selected":""}>${l}</option>`).join("")}</select></div>
 ${d.part==="team"?`<div><label>Players per team</label><input name="dt${p}" type="number" min="2" max="30" value="${E(d.size)}"></div>`:""}
-<div><label>Fee per player (₹)</label><input name="df${p}" type="number" min="0" value="${E(d.fee)}"></div></div>
+</div>
 <details open><summary>Entries and format</summary>${fmtFields(fc,`x${p}_`)}</details></div>`;
 }
 const umbBody=()=>UMB.sports.map((s,si)=>`<div class="umbs"><h4>Sport ${si+1}</h4><div class="g2">
@@ -1925,19 +1969,20 @@ ${s.sport==="Other"?`<div><label>Sport name</label><input name="spc${si}" value=
 <button type="button" class="s o" data-act="umbsuggest" data-id="${si}">Suggest standard disciplines</button>
 ${s.discs.map((d,di)=>umbDiscHTML(si,di,d)).join("")}</div>`).join("");
 const umbForm=()=>`<form class="card" data-f="umb" data-fmtform><h3>Multi-sport event</h3>
-<p class="m">One event name with several sports under it. Each sport has its own disciplines (for example Men’s Singles or Mixed Doubles), and each discipline is Individual, a Doubles pair or a Team, with its own fee, entries and format.</p>
+<p class="m">One event name with several sports under it. Each sport has its own disciplines (for example Men’s Singles or Mixed Doubles), and each discipline is Individual, a Doubles pair or a Team, with its own entries and format. Players register once and pay one fee for the whole event.</p>
 <div class="g2"><div><label>Event name</label><input name="uname" value="${E(UMB.name)}" placeholder="e.g. Terrace Olympics 2026"></div>
 <div><label>Venue (optional)</label><input name="uvenue" value="${E(UMB.venue)}"></div>
+<div><label>Registration fee for the whole event (₹)</label><input name="ufee" type="number" min="0" value="${E(UMB.fee)}"></div>
 <div><label>How many sports?</label><input name="ns" type="number" min="1" max="12" value="${UMB.sports.length}" data-umb="ns"></div></div>
 <div id="umbBody">${umbBody()}</div><button class="g">Create multi-sport event</button></form>`;
 const evModeBar=()=>`<h3 style="margin-top:24px">Add an event</h3><div class="sub"><button type="button" data-act="evmode" data-id="one" class="${EV.mode!=="multi"?"on":""}">One sport</button><button type="button" data-act="evmode" data-id="multi" class="${EV.mode==="multi"?"on":""}">Multi-sport event</button></div>`;
-const umbSections=(cards,adm,card)=>{const keys=[...new Set(cards.filter(c=>c.umb).map(c=>c.umb))];
+const umbSections=(cards,adm,card,reg)=>{const keys=[...new Set(cards.filter(c=>c.umb).map(c=>c.umb))];
   return keys.map(k=>{const cs=cards.filter(c=>c.umb===k),all=cs.flatMap(c=>c.items),ven=(all.find(x=>x.venue)||{}).venue;
-    return `<section class="umb"><div class="umbh"><div><h3>${E(cs[0].umbName)}</h3><div class="m">${cs.length} sport${cs.length>1?"s":""} · ${all.length} discipline${all.length>1?"s":""}${ven?" · "+E(ven):""}</div></div>${adm?`<button class="s d" data-act="delumb" data-id="${E(k)}">Delete whole event</button>`:""}</div><div class="grid">${cs.map(card).join("")}</div></section>`}).join("")};
+    return `<section class="umb"><div class="umbh"><div><h3>${E(cs[0].umbName)}</h3><div class="m">${cs.length} sport${cs.length>1?"s":""} · ${all.length} discipline${all.length>1?"s":""}${ven?" · "+E(ven):""}</div></div>${adm?`<button class="s d" data-act="delumb" data-id="${E(k)}">Delete whole event</button>`:""}</div>${reg?reg({key:k,name:cs[0].umbName,items:all}):""}<div class="grid">${cs.map(card).join("")}</div></section>`}).join("")};
 Object.assign(F,{
   async umb(fd){
     if(!isAdm()||!live())return toast("Only admins can add events in a live edition.");
-    const un=(fd.get("uname")||"").trim();if(!un)return toast("Enter the event name.");
+    const un=(fd.get("uname")||"").trim();if(!un)return toast("Enter the event name.");const ufee=+fd.get("ufee")||0;
     const venue=(fd.get("uvenue")||"").trim()||null,uk=umbKey(),rows=[],seen=new Set((EV.list||[]).map(e=>e.name.toLowerCase()));
     for(let si=0;fd.has("sp"+si);si++){
       let sport=fd.get("sp"+si);if(sport==="Other")sport=(fd.get("spc"+si)||"").trim();
@@ -1950,12 +1995,12 @@ Object.assign(F,{
         if(seen.has(name.toLowerCase()))return toast(`“${name}” already exists or appears twice. Give each discipline its own name.`);seen.add(name.toLowerCase());
         fd.set(fx+"unit",unitOf(kind));const c=fmtCfg(fd,fx),pl=fmtPlan(c);if(pl.err)return toast(`${name}: ${pl.err}`);
         const size=kind==="team"?+fd.get("dt"+p):kind==="doubles"?2:1;if(kind==="team"&&!(size>=2))return toast(`${name}: enter the players per team (at least 2).`);
-        rows.push({edition_id:S.ed.id,name,fee:+fd.get("df"+p)||0,capacity:kind==="team"?null:(c.cap||c.players),format_config:c,kind,group_key:gk,group_name:sport,umbrella_key:uk,umbrella_name:un,discipline:disc,category:fd.get("dc"+p),team_size:size,venue});
+        rows.push({edition_id:S.ed.id,name,fee:ufee,umbrella_fee:ufee,capacity:kind==="team"?null:(c.cap||c.players),format_config:c,kind,group_key:gk,group_name:sport,umbrella_key:uk,umbrella_name:un,discipline:disc,category:fd.get("dc"+p),team_size:size,venue});
       }
     }
     if(!rows.length)return toast("Add at least one sport with one discipline.");
     if(chk(await sb.from("events").insert(rows))){toast(`Created ${un}: ${new Set(rows.map(r=>r.group_key)).size} sport(s), ${rows.length} discipline(s)`);
-      UMB.name="";UMB.venue="";UMB.sports=[umbSport(0)];BN.c={};HERO.c={};render()}
+      UMB.name="";UMB.venue="";UMB.fee="0";UMB.sports=[umbSport(0)];BN.c={};HERO.c={};render()}
   }
 });
 Object.assign(A,{
