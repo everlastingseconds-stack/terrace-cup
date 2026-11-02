@@ -220,6 +220,12 @@ main.anim .grid>:nth-child(5){animation-delay:.24s}main.anim .grid>:nth-child(6)
 .oly-t tr.top td{background:rgba(217,165,33,.1)}
 .md{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:6px;vertical-align:-1px}
 .md.g{background:#e6b422}.md.s{background:#c3c8d1}.md.b{background:#b8733a}
+.evsub{border-top:1px solid var(--line);margin-top:14px;padding-top:12px}
+.evsub-h{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
+.evsub-h b{font:600 13px "IBM Plex Mono",ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--gold2)}
+.umb{margin:26px 0 8px}.umbh{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap;border-bottom:2px solid var(--red);padding-bottom:8px;margin-bottom:14px}
+.umbs{border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:8px;padding:14px;margin:14px 0;background:rgba(255,255,255,.02)}
+.umbd{border:1px dashed var(--line);border-radius:6px;padding:12px;margin-top:12px}.umbs h4,.umbd h4{margin:0 0 6px;color:var(--gold2)}
 </style>
 </head>
 <body>
@@ -715,22 +721,23 @@ const SPT=[
 const TROPHY=[null,"Event","#d9a521",ICO('<path d="M14 6h20v10a10 10 0 01-20 0z"/><path d="M14 10H7c0 7 3 10 8 11M34 10h7c0 7-3 10-8 11M24 26v8M16 42h16M19 34h10"/>')];
 const sportOf=n=>{const m=SPT.find(x=>x[0].test(n||""))||TROPHY;return{n:m[1],c:m[2],i:m[3]}};
 const evTop0=(v,n)=>{const s=sportOf(v.name),c=+v.capacity||0,t=`font-size:13px;margin-bottom:6px`;
-  return `<div class="card evc" style="--acc:${s.c}"><div class="evh"><span class="evi">${s.i}</span><div><h3>${E(v.name)}</h3><div class="m evs">${s.n}</div></div></div>
+  return `<div class="card evc" style="--acc:${s.c}"><div class="evh"><span class="evi">${s.i}</span><div><h3>${E(v.name)}</h3><div class="m evs">${s.n}${v.kind?" · "+kindLabel[v.kind]:""}</div></div></div>
   <div class="fee">${+v.fee>0?R(v.fee):"FREE"}</div>
-  ${c?`<div class="sb"><i style="width:${Math.min(100,Math.round(n/c*100))}%"></i></div><div class="m" style="${t}">${n>=c?"Full":`${n} of ${c} spots filled`}</div>`:`<div class="m" style="${t}">${n} entered</div>`}`};
+  ${c?`<div class="sb"><i style="width:${Math.min(100,Math.round(n/c*100))}%"></i></div><div class="m" style="${t}">${n>=c?"Full":`${n} of ${c} spots filled`}</div>`:`<div class="m" style="${t}">${v.kind==="team"&&v.format_config&&v.format_config.players?v.format_config.players+" teams · "+n+" players registered":n+" entered"}</div>`}`};
 
 
 // ---------- event formats: players, groups, how many progress ----------
 function fmtPlan(c){
-  const N=+c.players||0;if(N<2)return{err:"Enter at least 2 players."};
+  const u=c.unit||"players",N=+c.players||0;if(u==="pairs"&&(+c.cap||0)%2)return{err:"Doubles needs an even number of players."};
+  if(N<2)return{err:u==="pairs"?"Enter at least 4 players (2 pairs).":`Enter at least 2 ${u}.`};
   const steps=[];let q=N;
   if(c.format==="rrko"){
     const G=+c.groups||0,K=+c.advance||0;if(G<1)return{err:"Use at least 1 group."};
     const small=Math.floor(N/G),big=Math.ceil(N/G);
-    if(small<2)return{err:`Need at least ${G*2} players for ${G} groups.`};
-    if(K<1)return{err:"At least 1 player must progress from each group."};
-    if(K>small)return{err:`Players progressing per group cannot exceed the smallest group size (${small}).`};
-    q=G*K;if(q<2)return{err:G===1?"With one group, at least 2 players must progress.":"At least 2 players must progress."};
+    if(small<2)return{err:`Need at least ${G*2} ${u} for ${G} groups.`};
+    if(K<1)return{err:"At least 1 must progress from each group."};
+    if(K>small)return{err:`The number progressing per group cannot exceed the smallest group size (${small}).`};
+    q=G*K;if(q<2)return{err:G===1?"With one group, at least 2 must progress.":"At least 2 must progress."};
     steps.push({name:"Round 1, group stage",in:N,out:q,note:`${G} group${G>1?"s":""} of ${small===big?big:small+" to "+big}, top ${K} from each`});
   }
   const size=1<<Math.ceil(Math.log2(q));
@@ -738,18 +745,21 @@ function fmtPlan(c){
     steps.push({name:rname(len),in:first?q:len*2,out:len,note:byes?`${byes} bye${byes>1?"s":""}`:""})}
   return{steps};
 }
-const fmtCfg=fd=>{const f=fd.get("format")==="rrko"?"rrko":"ko",c={players:+fd.get("players")||0,format:f};if(f==="rrko"){c.groups=+fd.get("groups")||2;c.advance=+fd.get("advance")||1}return c};
+const fmtCfg=(fd,px="")=>{const f=fd.get(px+"format")==="rrko"?"rrko":"ko",unit=fd.get(px+"unit")||"players",raw=+fd.get(px+"players")||0,c={players:unit==="pairs"?Math.floor(raw/2):raw,format:f,unit};if(unit==="pairs")c.cap=raw;if(f==="rrko"){c.groups=+fd.get(px+"groups")||2;c.advance=+fd.get(px+"advance")||1}return c};
+const fmtN=c=>c.unit==="pairs"?`${c.cap||c.players*2} players (${c.players} pairs)`:`${c.players} ${c.unit||"players"}`;
+const unitOf=k=>k==="team"?"teams":k==="doubles"?"pairs":"players";
+const kindLabel={singles:"Singles",doubles:"Doubles",team:"Team event"};
 const fmtPrev=c=>{const p=fmtPlan(c);if(p.err)return `<div class="note">${E(p.err)}</div>`;
-  return `<div class="plan">${p.steps.map(x=>`<div class="ps"><b>${E(x.name)}</b><span class="pp">${x.in} players → ${x.name==="Final"?"champion":x.out+" progress"}</span>${x.note?`<span class="m">${E(x.note)}</span>`:""}</div>`).join("")}</div>`};
-const fmtLine=c=>{if(!c||!c.players||fmtPlan(c).err)return "";return c.format==="rrko"?`Groups, then knockout · ${c.players} players · ${c.groups} group${c.groups>1?"s":""}, top ${c.advance} progress`:`Knockout · ${c.players} players`};
-const fmtFields=c=>{c=Object.assign({players:"",format:"ko",groups:2,advance:2},c||{});const g=c.format==="rrko"?"":`style="display:none"`;
-  return `<div class="g2"><div><label>Number of players</label><input name="players" type="number" min="2" max="512" value="${c.players}" required></div>
-  <div><label>Format</label><select name="format"><option value="ko" ${c.format==="ko"?"selected":""}>Knockout only</option><option value="rrko" ${c.format==="rrko"?"selected":""}>Round robin + knockout</option></select></div>
-  <div class="grpf" ${g}><label>Number of groups</label><input name="groups" type="number" min="1" value="${c.groups}"></div>
-  <div class="grpf" ${g}><label>Players progressing from each group</label><input name="advance" type="number" min="1" value="${c.advance}"></div></div>
-  <div class="fmtprev">${c.players?fmtPrev(c):`<p class="m" style="margin:10px 0">Enter the number of players to see how many progress from each round.</p>`}</div>`};
+  return `<div class="plan">${p.steps.map(x=>`<div class="ps"><b>${E(x.name)}</b><span class="pp">${x.in} ${c.unit||"players"} → ${x.name==="Final"?"champion":x.out+" progress"}</span>${x.note?`<span class="m">${E(x.note)}</span>`:""}</div>`).join("")}</div>`};
+const fmtLine=c=>{if(!c||!c.players||fmtPlan(c).err)return "";return c.format==="rrko"?`Groups, then knockout · ${fmtN(c)} · ${c.groups} group${c.groups>1?"s":""}, top ${c.advance} progress`:`Knockout · ${fmtN(c)}`};
+const fmtFields=(c,px="")=>{c=Object.assign({players:"",format:"ko",groups:2,advance:2,unit:"players"},c||{});const g=c.format==="rrko"?"":`style="display:none"`,u=c.unit,U=u[0].toUpperCase()+u.slice(1),n=px+"",shown=u==="pairs"?(c.cap||(c.players?c.players*2:"")):c.players,lab=u==="pairs"?"players (pairs are made in the Draw)":u;
+  return `<div class="fmtblk" data-px="${px}"><input type="hidden" name="${n}unit" value="${u}"><div class="g2"><div><label>Number of ${lab}</label><input name="${n}players" type="number" min="2" max="512" value="${shown}"></div>
+  <div><label>Format</label><select name="${n}format"><option value="ko" ${c.format==="ko"?"selected":""}>Knockout only</option><option value="rrko" ${c.format==="rrko"?"selected":""}>Round robin + knockout</option></select></div>
+  <div class="grpf" ${g}><label>Number of groups</label><input name="${n}groups" type="number" min="1" value="${c.groups}"></div>
+  <div class="grpf" ${g}><label>${U} progressing from each group</label><input name="${n}advance" type="number" min="1" value="${c.advance}"></div></div>
+  <div class="fmtprev">${c.players?fmtPrev(c):`<p class="m" style="margin:10px 0">Enter the number of ${u==="pairs"?"players":u} to see how many progress from each round.</p>`}</div></div>`};
 const fmtExtras=v=>{const l=fmtLine(v.format_config);
-  return (l?`<div class="m" style="font-size:13px;margin-bottom:6px">${E(l)}</div>`:"")+(isAdm()&&live()?`<details><summary>${v.format_config?"Edit format":"Set format"}</summary><form data-f="evfmt" data-fmtform><input type="hidden" name="id" value="${v.id}">${fmtFields(v.format_config||{players:v.capacity||""})}<button class="g">Save format</button></form></details>`:"")};
+  return (l?`<div class="m" style="font-size:13px;margin-bottom:6px">${E(l)}</div>`:"")+(isAdm()&&live()?`<details><summary>${v.format_config?"Edit format":"Set format"}</summary><form data-f="evfmt" data-fmtform><input type="hidden" name="id" value="${v.id}"><input type="hidden" name="kind" value="${E(v.kind||"")}">${fmtFields(Object.assign({unit:unitOf(v.kind)},v.format_config||{players:v.capacity||""}))}<button class="g">Save format</button></form></details>`:"")};
 // ---------- event banner: live and upcoming events in a carousel ----------
 const BN={c:{},i:0,t:0,p:0,hold:false,sig:""};
 const IST="Asia/Kolkata";
@@ -979,6 +989,16 @@ V.reg=async()=>{
 <button>${first?"Complete registration":"Save changes"}</button></form>`;
 };
 
+const EV={list:[]};
+async function delEvents(ids,label){
+  if(!isAdm()||!live())return toast("Only admins can delete events in a live edition.");
+  const c=await sb.from("registrations").select("id",{count:"exact",head:true}).in("event_id",ids),n=c.count||0;
+  if(!confirm(`Delete “${label}”?${n?` ${n} registration${n>1?"s":""} will be removed with it.`:""} Its draw and auction are removed too. This cannot be undone.`))return;
+  for(const t of ["registrations","draws","auctions"]){const r=await sb.from(t).delete().in("event_id",ids);if(r.error)return toast(`Could not remove the ${t}: ${r.error.message}`)}
+  await sb.from("expenses").update({event_id:null}).in("event_id",ids); // keep the costs, detach them from the deleted event
+  const r=await sb.from("events").delete().in("id",ids);if(r.error)return toast(r.error.message);
+  BN.c={};HERO.c={};toast("Event deleted");render();
+}
 V.ev=async()=>{
   if(!S.ed) return `${empty("No edition yet","The organisers have not created one.")}`;
   if(!S.player){S.tab="reg";return V.reg()}
@@ -986,19 +1006,40 @@ V.ev=async()=>{
     sb.from("events").select("*").eq("edition_id",S.ed.id).order("id"),
     sb.from("registrations").select("event_id,status").eq("player_id",S.player.id),
     sb.from("participants").select("event_id").eq("edition_id",S.ed.id).eq("status","verified")]);
+  EV.list=ev.data||[];
   const cn=new Map();(cnt.data||[]).forEach(r=>cn.set(r.event_id,(cn.get(r.event_id)||0)+1));
   const st=new Map((mine.data||[]).map(r=>[r.event_id,r.status]));
   const qr=S.ed.qr_path?pub(S.ed.qr_path):null;
-  let h=`<h2>Event registration</h2>${live()?"":`<div class="note">${E(S.ed.name)} is archived. Registrations are read-only.</div>`}<div class="grid">`;
-  h+=(ev.data||[]).map(v=>`${evTop(v,cn.get(v.id)||0)}`+
-    (st.get(v.id)?`<span class="chip ${st.get(v.id)}">${st.get(v.id)}</span>`:live()?`<details><summary>Register and pay</summary>
+  let h=`<h2>Event registration</h2>${live()?"":`<div class="note">${E(S.ed.name)} is archived. Registrations are read-only.</div>`}`;
+  const items=ev.data||[],cards=[],seenG=new Set(),adm=isAdm()&&live();
+  items.forEach(v=>{if(v.group_key){if(seenG.has(v.group_key))return;seenG.add(v.group_key);cards.push({key:v.group_key,name:v.group_name||v.name,umb:v.umbrella_key,umbName:v.umbrella_name,items:items.filter(x=>x.group_key===v.group_key)})}else cards.push({v})});
+  const regBlock=v=>{const s=st.get(v.id),dbl=v.kind==="doubles";
+    if(s)return `<span class="chip ${s}">${s}</span>`;
+    if(!live())return `<span class="m">Closed</span>`;
+    return (v.kind==="team"?`<p class="m" style="font-size:13px">You register as a player. Teams are formed at the auction.</p>`:dbl?`<p class="m" style="font-size:13px">You register on your own and pay only your own fee. Partners are decided at the draw.</p>`:"")+`<details><summary>Register and pay</summary>
     ${qr?`<img src="${qr}" alt="GPay QR" style="width:200px;background:#fff;padding:8px;border-radius:6px;margin-top:8px">`:`<p class="m">The payment QR has not been uploaded yet.</p>`}
     <p class="m">Pay ${R(v.fee)} by scanning, then enter the transaction ID.</p>
     <form data-f="reg"><input type="hidden" name="event_id" value="${v.id}"><label>UPI transaction ID (UTR)</label><input name="utr" required>
-    <label>Screenshot (optional)</label><input type="file" name="proof" accept="image/*"><button>Submit payment</button></form></details>`:`<span class="m">Closed</span>`)+`</div>`).join("")+
-    ((ev.data||[]).length?"":empty("No events yet","Events added by the organisers will appear here."))+`</div>`;
+    <label>Screenshot (optional)</label><input type="file" name="proof" accept="image/*"><button>Submit payment</button></form></details>`};
+  const grpCard=g=>{const sp=sportOf(g.name);
+    return `<div class="card evc" style="--acc:${sp.c}"><div class="evh"><span class="evi">${sp.i}</span><div><h3>${E(g.name)}</h3><div class="m evs">${sp.n} · ${g.umb?g.items.length+" discipline"+(g.items.length>1?"s":""):"Singles and doubles"}</div></div></div>`+
+    g.items.map(v=>{const n=cn.get(v.id)||0,c=+v.capacity||0,t=`font-size:13px;margin-bottom:6px`,dbl=v.kind==="doubles";
+      return `<div class="evsub"><div class="evsub-h"><b>${E(v.discipline||(dbl?"Doubles":"Singles"))}</b><span class="m">${+v.fee>0?R(v.fee):"FREE"}</span></div>${v.discipline?`<div class="m" style="font-size:13px;margin-bottom:6px">${E([v.category,partLabel(v)].filter(Boolean).join(" · "))}</div>`:""}
+      ${c?`<div class="sb"><i style="width:${Math.min(100,Math.round(n/c*100))}%"></i></div><div class="m" style="${t}">${n>=c?"Full":`${n} of ${c} spots filled`}</div>`:`<div class="m" style="${t}">${n} entered</div>`}
+      ${fmtExtras(v)}${schedExtras(v)}${regBlock(v)}</div>`}).join("")+
+    (adm?`<button class="s d" style="margin-top:14px" data-act="delgrp" data-id="${E(g.key)}">${g.umb?"Delete sport":"Delete event"}</button>`:"")+`</div>`};
+  h+=umbSections(cards,adm,grpCard)+`<div class="grid">`+cards.filter(c=>!c.umb).map(c=>c.items?grpCard(c):`${evTop(c.v,cn.get(c.v.id)||0)}${regBlock(c.v)}${adm?`<button class="s d" style="margin-top:12px" data-act="delev" data-id="${c.v.id}">Delete event</button>`:""}</div>`).join("")+
+    (items.length?"":empty("No events yet","Events added by the organisers will appear here."))+`</div>`;
   if(isAdm()&&live()){
-    h+=`<h3 style="margin-top:24px">Add an event</h3><form class="card" data-f="event" data-fmtform><div class="g2"><div><label>Event name</label><input name="name" required></div><div><label>Fee (₹)</label><input name="fee" type="number" min="0" value="0"></div></div>${fmtFields({})}<button class="g">Add event</button></form>`;
+    h+=`${evModeBar()}${EV.mode==="multi"?umbForm():`<form class="card" data-f="event" data-fmtform>
+    <div class="g2"><div><label>Event name</label><input name="name" required></div>
+    <div><label>Event type</label><select name="kind"><option value="singles">Singles</option><option value="doubles">Doubles</option><option value="both">Singles and doubles</option><option value="team">Team based</option></select></div></div>
+    <div class="g2"><div><label>Fee per player (₹)</label><input name="fee" type="number" min="0" value="0"></div>
+    <div data-k="both" style="display:none"><label>Doubles fee per player (₹)</label><input name="dfee" type="number" min="0" placeholder="Same as the fee"></div></div>
+    <div data-k="singles both"><h4 style="margin:14px 0 4px">Singles</h4>${fmtFields({unit:"players"},"s_")}</div>
+    <div data-k="doubles both" style="display:none"><h4 style="margin:14px 0 4px">Doubles</h4>${fmtFields({unit:"pairs"},"d_")}</div>
+    <div data-k="team" style="display:none"><h4 style="margin:14px 0 4px">Teams</h4><p class="m">Players register one by one and are placed into teams at the auction.</p>${fmtFields({unit:"teams"},"t_")}</div>
+    <button class="g">Add event</button></form>`}`;
     const pls=await sb.from("players").select("id,full_name,phone").order("full_name");
     h+=`<h3 style="margin-top:24px">Add a player to an event</h3><form class="card" data-f="addplayer"><p class="m">For people who are not registering on the portal. The entry is marked verified straight away.</p>
     <div class="g2"><div><label>Event</label><select name="event_id" required>${(ev.data||[]).map(v=>`<option value="${v.id}">${E(v.name)}</option>`).join("")}</select></div>
@@ -1037,7 +1078,7 @@ SC.bridge={
 SC.bridge.getFocus=()=>SC.focus;
 SC.bridge.listImports=async()=>{
   const ed=SC.ed;if(!ed)return [];
-  const ev=await sb.from("events").select("id,name").eq("edition_id",ed.id).order("id");
+  const ev=await sb.from("events").select("*").eq("edition_id",ed.id).order("id");
   if(ev.error)throw ev.error;
   const evs=ev.data||[],ids=evs.map(e=>e.id);if(!ids.length)return [];
   const [d,a,p]=await Promise.all([
@@ -1048,9 +1089,10 @@ SC.bridge.listImports=async()=>{
     const res=((d.data||[]).find(x=>x.event_id===e.id)||{}).state?.result;
     const draw=res&&res.revealed!==false&&(res.rounds||res.groups)?res:null;
     const teams=(((a.data||[]).find(x=>x.event_id===e.id)||{}).state?.teams||[]).filter(t=>t.captain||(t.squad||[]).length);
+    const pg=((d.data||[]).find(x=>x.event_id===e.id)||{}).state?.pairing,pairs=e.kind==="doubles"?(pg&&pg.confirmed?(pg.pairs||[]).map(x=>`${x.a.name} / ${x.b.name}`):[]):null;
     return {id:e.id,name:e.name,draw,
       auction:teams.map(t=>({name:t.name,captain:t.captain||"",squad:(t.squad||[]).map(s=>s.name)})),
-      players:(p.data||[]).filter(x=>x.event_id===e.id).map(x=>x.full_name).filter(Boolean)};
+      players:pairs?pairs:(p.data||[]).filter(x=>x.event_id===e.id).map(x=>x.full_name).filter(Boolean)};
   });
 };
 async function scFlush(){
@@ -1284,8 +1326,20 @@ const F={
     if(r.error){toast(r.error.code==="23505"?"This transaction ID or event entry already exists.":r.error.message);return}
     toast("Submitted. Waiting for admin check");render();
   },
-  async event(fd){const c=fmtCfg(fd),p=fmtPlan(c);if(p.err)return toast(p.err);
-    if(chk(await sb.from("events").insert({edition_id:S.ed.id,name:fd.get("name").trim(),fee:+fd.get("fee")||0,capacity:c.players,format_config:c})))render()},
+  async event(fd){
+    const kind=fd.get("kind")||"singles",name=fd.get("name").trim(),fee=+fd.get("fee")||0;
+    if(!name)return toast("Enter the event name.");
+    const mk=(px,k,nm,f)=>{const c=fmtCfg(fd,px),p=fmtPlan(c);
+      if(p.err)return{err:(kind==="both"?(k==="doubles"?"Doubles: ":"Singles: "):"")+p.err};
+      return{row:{edition_id:S.ed.id,name:nm,fee:f,capacity:k==="team"?null:(c.cap||c.players),format_config:c,kind:k}}};
+    let parts;
+    if(kind==="both"){
+      const gk=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():Date.now()+"-"+Math.random().toString(36).slice(2),dfee=fd.get("dfee")===""?fee:(+fd.get("dfee")||0);
+      parts=[mk("s_","singles",`${name} – Singles`,fee),mk("d_","doubles",`${name} – Doubles`,dfee)];
+      parts.forEach(p=>{if(p.row){p.row.group_key=gk;p.row.group_name=name}});
+    }else parts=[mk(kind==="team"?"t_":kind==="doubles"?"d_":"s_",kind,name,fee)];
+    const bad=parts.find(p=>p.err);if(bad)return toast(bad.err);
+    if(chk(await sb.from("events").insert(parts.map(p=>p.row))))render()},
   async medal(fd){
     if(!isAdm()||!live())return toast("Only admins can award medals in a live edition.");
     const label=fd.get("label").trim();if(!label)return toast("Enter the event or discipline.");
@@ -1304,7 +1358,7 @@ const F={
     if(chk(await sb.from("events").update({starts_at:st,ends_at:en,venue:fd.get("venue").trim()||null}).eq("id",id))){BN.c={};toast("Schedule saved");render()}
   },
   async evfmt(fd){const c=fmtCfg(fd),p=fmtPlan(c);if(p.err)return toast(p.err);
-    if(chk(await sb.from("events").update({capacity:c.players,format_config:c}).eq("id",+fd.get("id"))))render()},
+    if(chk(await sb.from("events").update({capacity:fd.get("kind")==="team"?null:(c.cap||c.players),format_config:c}).eq("id",+fd.get("id"))))render()},
   async qr(fd){
     const f=fd.get("qr"),path=`qr/${S.ed.id}-${Date.now()}.png`;
     if(!chk(await upload("public-assets",path,f)))return;
@@ -1319,6 +1373,8 @@ const F={
   async fb(fd){if(chk(await sb.from("feedback").insert({edition_id:S.ed?.id,user_id:S.user.id,rating:+fd.get("rating"),message:fd.get("message").trim()}))){toast("Thanks for your feedback");render()}}
 };
 const A={
+  async delev(id){const v=EV.list.find(e=>e.id===+id);await delEvents([+id],v?v.name:"this event")},
+  async delgrp(key){const it=EV.list.filter(e=>e.group_key===key);if(it.length)await delEvents(it.map(e=>e.id),it[0].group_name||it[0].name)},
   async delmedal(id){if(!isAdm()||!live())return;if(!confirm("Remove this medal?"))return;if(chk(await sb.from("medal_awards").delete().eq("id",id)))render()},
   hcprev(){bnGo(BN.i-1)},hcnext(){bnGo(BN.i+1)},hcdot(i){bnGo(+i)},
   hcgo(id){const it=bnCur().find(x=>x.id===+id);if(it&&it.live){SC.pe=+id;S.tab="score"}else S.tab="ev";S.anim=true;render();scrollTo({top:0,behavior:"smooth"})},
@@ -1525,9 +1581,86 @@ async function dr(fn){if(!isAdm()||!live())return;const m=fn(DR.st);if(m)return 
 const rname=(len)=>len===1?"Final":len===2?"Semi-finals":len===4?"Quarter-finals":"Round of "+len*2;
 const slotH=s=>s.bye?`<span class="m">BYE</span>`:s.name?`${E(s.name)}${s.team?`<span class="tm">${E(s.team)}</span>`:""}`:s.label?E(s.label):`<span class="m">Winner R${s.from.r} M${s.from.m}</span>`;
 
+// ---------- doubles pairing in the Draw tab: pots or no pots, chosen by hand or generated ----------
+const drKind=()=>((DR.evs||[]).find(e=>e.id===DR.ev)||{}).kind;
+const drDbl=()=>drKind()==="doubles";
+const drU=()=>drDbl()?{s:"Pair",p:"pairs"}:{s:"Player",p:"players"};
+const nk=p=>String((p&&p.name)||"").trim().toLowerCase();
+const drPg=s=>s.pairing||(s.pairing={pots:false,pool:[],pairs:[],confirmed:false});
+const drShuf=a=>{a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a};
+const drPairLine=x=>`${x.a.name} / ${x.b.name}${x.a.team&&x.a.team===x.b.team?", "+x.a.team:""}`;
+function drFree(pg){const used=new Set();pg.pairs.forEach(x=>{used.add(nk(x.a));used.add(nk(x.b))});return pg.pool.filter(p=>!used.has(nk(p)))}
+function drAuto(pg,keep){
+  const pairs=keep?pg.pairs.slice():[],used=new Set();pairs.forEach(x=>{used.add(nk(x.a));used.add(nk(x.b))});
+  const free=drShuf(pg.pool.filter(p=>!used.has(nk(p))));
+  if(!free.length)return "Everyone is already paired.";
+  if(pg.pots){
+    if(free.some(p=>p.pot!=="A"&&p.pot!=="B"))return "Put every unpaired player in Pot A or Pot B first.";
+    const A=free.filter(p=>p.pot==="A"),B=free.filter(p=>p.pot==="B");
+    if(A.length!==B.length)return `Pot A has ${A.length} unpaired players and Pot B has ${B.length}. They must match.`;
+    A.forEach((a,i)=>pairs.push({a:sl(a),b:sl(B[i])}));
+  }else{
+    if(free.length%2)return `${free.length} players are unpaired. Doubles needs an even number.`;
+    for(let i=0;i<free.length;i+=2)pairs.push({a:sl(free[i]),b:sl(free[i+1])});
+  }
+  pg.pairs=pairs;
+}
+function drPairList(pg,edit){return `<div class="wrap"><table>${pg.pairs.map((x,i)=>`<tr><td>${i+1}</td><td><b>${E(x.a.name)}</b> &amp; <b>${E(x.b.name)}</b></td>${edit?`<td><button type="button" class="s d" data-act="drpairdel" data-id="${i}">Remove</button></td>`:""}</tr>`).join("")}</table></div>`}
+function drPairView(s){const pg=s.pairing;return pg&&pg.confirmed&&pg.pairs.length?`<div class="card"><h3>Pairs</h3>${drPairList(pg,false)}</div>`:""}
+function drPairCard(s){
+  const pg=s.pairing||{pots:false,pool:[],pairs:[],confirmed:false},free=drFree(pg),paired=new Map();
+  pg.pairs.forEach(x=>{paired.set(nk(x.a),x.b.name);paired.set(nk(x.b),x.a.name)});
+  const head=`<h3>Doubles pairs</h3><p class="m">Everyone registers on their own and pays their own fee. Decide the partners here, then confirm to set the entrants for the draw.</p>`;
+  if(pg.confirmed)return `<div class="card">${head}<div class="note" style="margin-bottom:10px">Pairs confirmed: ${pg.pairs.length} pairs.</div>${drPairList(pg,false)}<button type="button" class="d" style="margin-top:12px" data-act="dredit">Edit pairs</button></div>`;
+  const potSel=(p,i)=>`<select data-chg="drpot" data-i="${i}"><option value="">No pot</option><option value="A" ${p.pot==="A"?"selected":""}>Pot A</option><option value="B" ${p.pot==="B"?"selected":""}>Pot B</option></select>`;
+  const fa=pg.pots?free.filter(p=>p.pot==="A"):free,fb=pg.pots?free.filter(p=>p.pot==="B"):free,op=a=>a.map(p=>`<option>${E(p.name)}</option>`).join("");
+  const row=`display:flex;gap:8px;flex-wrap:wrap;margin-top:10px`;
+  return `<div class="card">${head}
+  <div style="${row}"><button type="button" class="s o" data-act="drpairload">Load registered players</button><button type="button" class="s o" data-act="drpairauc">Load from auction teams</button></div>
+  <label style="margin-top:14px">How are partners decided?</label><select data-chg="drpots"><option value="0" ${pg.pots?"":"selected"}>No pots: any two players can be paired</option><option value="1" ${pg.pots?"selected":""}>With pots: Pot A players are paired with Pot B players</option></select>
+  ${pg.pool.length?`<div class="wrap" style="margin-top:12px"><table><tr><th>Player</th>${pg.pots?"<th>Pot</th>":""}<th>Partner</th><th></th></tr>${pg.pool.map((p,i)=>`<tr><td>${E(p.name)}${p.team?` <span class="tm">${E(p.team)}</span>`:""}</td>${pg.pots?`<td>${potSel(p,i)}</td>`:""}<td>${paired.has(nk(p))?E(paired.get(nk(p))):`<span class="m">Not paired</span>`}</td><td><button type="button" class="s d" data-act="drpoolrm" data-id="${i}">Remove</button></td></tr>`).join("")}</table></div>`:`<p class="m" style="margin-top:12px">No players yet. Load the registered players to start.</p>`}
+  ${pg.pots&&pg.pool.length?`<div style="${row}"><button type="button" class="s o" data-act="drpotsplit" data-id="random">Split into pots at random</button><button type="button" class="s o" data-act="drpotsplit" data-id="half">First half to Pot A, the rest to Pot B</button></div>`:""}
+  <h4 style="margin:18px 0 6px">Choose partners yourself</h4>
+  <form data-f="drpair"><div class="g2"><div><label>${pg.pots?"Pot A player":"Player 1"}</label><select name="a">${op(fa)}</select></div><div><label>${pg.pots?"Pot B player":"Player 2"}</label><select name="b">${op(fb)}</select></div></div><button class="g" ${fa.length&&fb.length?"":"disabled"}>Pair them</button></form>
+  <h4 style="margin:18px 0 6px">Or let the portal pair them</h4>
+  <div style="${row.replace("margin-top:10px","")}"><button type="button" class="s o" data-act="drpairrest">Auto-pair the remaining players</button><button type="button" class="s o" data-act="drpairauto">Auto-generate all pairs</button></div>
+  ${pg.pairs.length?`<h4 style="margin:18px 0 6px">Pairs (${pg.pairs.length})</h4>${drPairList(pg,true)}`:""}
+  <div style="margin-top:16px"><button type="button" class="g" data-act="drconfirm" ${pg.pairs.length>=2&&!free.length?"":"disabled"}>Confirm pairs</button> ${free.length?`<span class="m">${free.length} player${free.length>1?"s":""} still unpaired.</span>`:""}</div></div>`;
+}
+Object.assign(A,{
+  async drpairload(){const {data}=await sb.from("participants").select("full_name").eq("event_id",DR.ev).eq("status","verified");
+    dr(s=>{const pg=drPg(s),have=new Set(pg.pool.map(nk));let n=0;
+      (data||[]).forEach(r=>{const nm=(r.full_name||"").trim();if(nm&&!have.has(nm.toLowerCase())){pg.pool.push({name:nm,team:"",pot:""});have.add(nm.toLowerCase());n++}});
+      toast(n?`Added ${n} player${n>1?"s":""}`:"No new registered players to add.")})},
+  async drpairauc(){const {data}=await sb.from("auctions").select("state").eq("event_id",DR.ev).maybeSingle(),ts=(data&&data.state&&data.state.teams)||[];
+    if(!ts.length)return toast("No auction teams found for this event.");
+    dr(s=>{const pg=drPg(s),idx=new Map(pg.pool.map(p=>[nk(p),p]));let n=0;
+      ts.forEach(t=>[t.captain&&{name:t.captain},...(t.squad||[])].filter(Boolean).forEach(p=>{const k=nk(p),ex=idx.get(k);
+        if(ex){if(!ex.team)ex.team=t.name}else{const np={name:p.name,team:t.name,pot:""};pg.pool.push(np);idx.set(k,np);n++}}));
+      toast(`Added ${n} player${n===1?"":"s"} with their teams`)})},
+  drpairauto(){dr(s=>{const pg=drPg(s);if(pg.pairs.length&&!confirm("Replace the current pairs with a new random pairing?"))return;return drAuto(pg,false)})},
+  drpairrest(){dr(s=>drAuto(drPg(s),true))},
+  drpairdel(i){dr(s=>{drPg(s).pairs.splice(+i,1)})},
+  drpoolrm(i){dr(s=>{const pg=drPg(s),p=pg.pool[+i];if(!p)return;pg.pool.splice(+i,1);pg.pairs=pg.pairs.filter(x=>nk(x.a)!==nk(p)&&nk(x.b)!==nk(p))})},
+  drpotsplit(mode){dr(s=>{const pg=drPg(s);if(pg.pool.length%2)return "There is an odd number of players, so the pots cannot be equal. Remove or add a player first.";
+    const ord=mode==="random"?drShuf(pg.pool):pg.pool.slice(),h=ord.length/2;ord.forEach((p,i)=>{p.pot=i<h?"A":"B"})})},
+  drconfirm(){dr(s=>{const pg=drPg(s),free=drFree(pg);
+    if(free.length)return `${free.length} player${free.length>1?"s are":" is"} not paired yet.`;
+    if(pg.pairs.length<2)return "Make at least 2 pairs.";
+    pg.confirmed=true;s.input=pg.pairs.map(drPairLine).join("\n");toast("Pairs confirmed")})},
+  dredit(){if(DR.playing)return toast("The reveal is in progress.");if(DR.st&&DR.st.result&&!confirm("The current draw stays as it is until you generate a new one. Edit the pairs?"))return;dr(s=>{drPg(s).confirmed=false})}
+});
+Object.assign(F,{
+  drpair:async fd=>{await dr(s=>{const pg=drPg(s),a=fd.get("a"),b=fd.get("b");
+    if(!a||!b)return "Pick both players.";if(a===b)return "Pick two different players.";
+    const pa=pg.pool.find(p=>p.name===a),pb=pg.pool.find(p=>p.name===b),used=new Set();pg.pairs.forEach(x=>{used.add(nk(x.a));used.add(nk(x.b))});
+    if(!pa||!pb||used.has(nk(pa))||used.has(nk(pb)))return "One of those players is already paired.";
+    pg.pairs.push({a:sl(pa),b:sl(pb)})})}
+});
+
 V.draw=async()=>{
   if(!S.ed)return `<p class="m">No edition yet.</p>`;
-  const {data:evs}=await sb.from("events").select("id,name,format_config").eq("edition_id",S.ed.id).order("id");
+  const {data:evs}=await sb.from("events").select("*").eq("edition_id",S.ed.id).order("id");
   if(!(evs||[]).length)return `<h2>Draw</h2><div class="note">Create an event first on the Event registration tab.</div>`;
   if(!evs.some(e=>e.id===DR.ev))DR.ev=evs[0].id;
   const all=await sb.from("draws").select("event_id,state").in("event_id",evs.map(e=>e.id));
@@ -1537,7 +1670,7 @@ V.draw=async()=>{
   const s=DR.st,run=isAdm()&&live();
   return `<h2>Draw</h2>${live()?"":`<div class="note">${E(S.ed.name)} is archived. The draw is read-only.</div>`}
   <div class="card"><label>Event</label><select data-chg="drev">${evs.map(e=>`<option value="${e.id}" ${e.id===DR.ev?"selected":""}>${E(e.name)}</option>`).join("")}</select></div>
-  ${run?drSetup(s):""}<div id="drOut">${drBody(s,run)}</div>${drDownload()}`;
+  ${drDbl()?(run?drPairCard(s):drPairView(s)):""}${run?drSetup(s):""}<div id="drOut">${drBody(s,run)}</div>${drDownload()}`;
 };
 function drSetup(s){const fc=((DR.evs||[]).find(e=>e.id===DR.ev)||{}).format_config,c=s.cfg,opt=(v,l,cur)=>`<option value="${v}" ${cur===v?"selected":""}>${l}</option>`;
   return `<div class="card"><h3>Draw setup</h3><form data-f="drgen">
@@ -1545,17 +1678,17 @@ function drSetup(s){const fc=((DR.evs||[]).find(e=>e.id===DR.ev)||{}).format_con
 <div><label>Can teammates face each other in the first round?</label><select name="same">${opt("no","No, keep teammates apart",c.same)}${opt("yes","Yes, allowed",c.same)}</select></div>
 ${fc?"":`<div class="grpf" ${c.format==="rrko"?"":`style="display:none"`}><label>Number of groups (1 or more)</label><input name="groups" type="number" min="1" value="${c.groups}"></div>
 <div class="grpf" ${c.format==="rrko"?"":`style="display:none"`}><label>Players advancing from each group</label><input name="advance" type="number" min="1" value="${c.advance}"></div>`}</div>
-${fc?`<p class="m" style="margin:10px 0 0">Format set for this event (${fc.players} players). Change it on the Event registration tab.</p>${fmtPrev(fc)}`:""}
-<label>Players, one per line: Name, Team (team is optional)</label>
+${fc?`<p class="m" style="margin:10px 0 0">Format set for this event (${fmtN(fc)}). Change it on the Event registration tab.</p>${fmtPrev(fc)}`:""}
+${drDbl()?`<input type="hidden" name="input" value="${E(s.input)}">${s.pairing&&s.pairing.confirmed?`<p class="m" style="margin:10px 0 0">The draw will use the ${s.pairing.pairs.length} confirmed pairs.</p>`:`<p class="m" style="margin:10px 0 0">Confirm the pairs above before generating the draw.</p>`}`:`<label>Players, one per line: Name, Team (team is optional)</label>
 <textarea id="dr_in" name="input" rows="8" placeholder="Rahul Sharma, Thunder XI&#10;Aman Singh, Royals">${E(s.input)}</textarea>
-<div style="margin-top:6px"><button type="button" class="s o" data-act="drimpreg">Add verified players of this event</button><button type="button" class="s o" data-act="drimpauc">Add players from this event’s auction teams</button></div>
-<button class="g">Generate draw</button> ${s.result?`<button type="button" class="d" data-act="drclear">Clear draw</button>`:""}</form></div>`}
+<div style="margin-top:6px"><button type="button" class="s o" data-act="drimpreg">Add verified players of this event</button><button type="button" class="s o" data-act="drimpauc">Add players from this event’s auction teams</button></div>`}
+<button class="g" ${drDbl()&&!(s.pairing&&s.pairing.confirmed)?"disabled":""}>Generate draw</button> ${s.result?`<button type="button" class="d" data-act="drclear">Clear draw</button>`:""}</form></div>`}
 const pk=s=>(s.name||"")+"|"+(s.team||"");
 const slotM=(s,rv)=>{if(rv&&s.name&&!rv.shown.has(pk(s)))return `<span class="q">? ? ?</span>`;const h=slotH(s);return rv&&rv.last&&pk(s)===pk(rv.last)?`<span class="hl">${h}</span>`:h};
 function drShow(r,rv){
   const real=r.rounds.flat().filter(m=>!m.a.bye&&!m.b.bye).length,gm=(r.groups||[]).reduce((a,g)=>a+g.fixtures.flat().length,0);
-  let h=rv?`<div class="card spot"><div class="m">Player ${rv.i} of ${rv.n}</div><div class="pn">${E(rv.last.name)}</div>${rv.last.team?`<span class="tm">${E(rv.last.team)}</span>`:""}</div>`:"";
-  h+=`<div class="card"><h3>${r.format==="ko"?"Knockout draw":"Round robin and knockout draw"}</h3><div class="m">${r.players.length} players · ${gm?gm+" group matches + ":""}${real} knockout matches · teammates in the first round: ${r.same==="yes"?"allowed":"not allowed"} · drawn ${new Date(r.created).toLocaleString("en-IN")}</div>${rv?"":(r.warn||[]).map(w=>`<div class="note" style="margin-top:10px">${E(w)}</div>`).join("")}</div>`;
+  let h=rv?`<div class="card spot"><div class="m">${drU().s} ${rv.i} of ${rv.n}</div><div class="pn">${E(rv.last.name)}</div>${rv.last.team?`<span class="tm">${E(rv.last.team)}</span>`:""}</div>`:"";
+  h+=`<div class="card"><h3>${r.format==="ko"?"Knockout draw":"Round robin and knockout draw"}</h3><div class="m">${r.players.length} ${drU().p} · ${gm?gm+" group matches + ":""}${real} knockout matches · teammates in the first round: ${r.same==="yes"?"allowed":"not allowed"} · drawn ${new Date(r.created).toLocaleString("en-IN")}</div>${rv?"":(r.warn||[]).map(w=>`<div class="note" style="margin-top:10px">${E(w)}</div>`).join("")}</div>`;
   if(r.groups)h+=`<h3>Group stage</h3><div class="grid">${r.groups.map(g=>`<div class="card"><h3 style="color:var(--gold2)">${E(g.name)}</h3>${g.players.map(p=>`<div>${slotM(sl(p),rv)}</div>`).join("")}${rv?"":g.fixtures.map((rd,i)=>`<div class="m" style="margin-top:10px">Matchday ${i+1}</div>${rd.map(m=>`<div style="font-size:14px">${E(m[0].name)} <span class="m">vs</span> ${E(m[1].name)}</div>`).join("")}`).join("")}</div>`).join("")}</div>`;
   h+=`<h3>Knockout bracket</h3>${r.format==="rrko"?`<p class="m">${r.groups.length===1?`The top ${r.advance} from the group qualify and are seeded by league position.`:`The top ${r.advance} from each group qualify. Group-stage opponents are kept apart in the first knockout round.`}</p>`:""}
 <div class="card"><div class="br">${r.rounds.map(rd=>`<div class="rdw"><h4>${rname(rd.length)}</h4><div class="rd">${rd.map((m,i)=>`<div class="mt"><div class="n"><span>M${i+1}</span>${m.a.bye||m.b.bye?`<span class="chip pending">BYE</span>`:`<span class="vs">VS</span>`}</div><div class="side">${slotM(m.a,rv)}</div><div class="side">${slotM(m.b,rv)}</div></div>`).join("")}</div></div>`).join("")}</div></div>`;
@@ -1564,7 +1697,7 @@ function drShow(r,rv){
 function drBody(s,run){
   const r=s.result;
   if(!r)return `<div class="card m">The draw has not been conducted yet.</div>`;
-  if(r.revealed===false)return run?`<div class="card"><h3>The draw is sealed</h3><p class="m">${r.players.length} players have been drawn. Start the reveal when everyone is watching: it counts down from 5, then shows one player every second.</p><button class="g" data-act="drreveal">Start the reveal</button></div>`
+  if(r.revealed===false)return run?`<div class="card"><h3>The draw is sealed</h3><p class="m">${r.players.length} ${drU().p} have been drawn. Start the reveal when everyone is watching: it counts down from 5, then shows one ${drU().s.toLowerCase()} every second.</p><button class="g" data-act="drreveal">Start the reveal</button></div>`
     :`<div class="card"><h3>The draw is being conducted</h3><p class="m">It will appear here once it has been revealed. Check back in a moment.</p></div>`;
   return drShow(r);
 }
@@ -1581,7 +1714,7 @@ async function drPlay(){
   }finally{o.remove();DR.playing=false}
 }
 Object.assign(F,{
-  drgen:async fd=>{if(DR.playing)return toast("The reveal is in progress.");DR.fresh=false;await dr(s=>{
+  drgen:async fd=>{if(DR.playing)return toast("The reveal is in progress.");if(drDbl()&&!(DR.st&&DR.st.pairing&&DR.st.pairing.confirmed))return toast("Confirm the pairs first.");DR.fresh=false;await dr(s=>{
     const players=drParse(fd.get("input")),cfg={format:fd.get("format"),same:fd.get("same"),groups:parseInt(fd.get("groups"))||2,advance:parseInt(fd.get("advance"))||1};
     s.input=fd.get("input");s.cfg=cfg;
     if(players.length<2)return "Enter at least 2 players.";
@@ -1591,7 +1724,7 @@ Object.assign(F,{
       if(cfg.advance>small)return `Players advancing per group cannot exceed the smallest group size (${small}).`;
       if(cfg.groups*cfg.advance<2)return cfg.groups===1?"With one group, at least 2 players must advance to the knockout.":"At least 2 players must advance."}
     if(s.result&&!confirm("Replace the current draw with a new random draw?"))return;
-    s.result=drMake(players,cfg);s.result.revealed=false;{const fc=((DR.evs||[]).find(e=>e.id===DR.ev)||{}).format_config;if(fc&&fc.players&&players.length!==+fc.players)s.result.warn.push(`This event was planned for ${fc.players} players but ${players.length} were drawn.`)}DR.fresh=true;toast("Draw generated")});if(DR.fresh){DR.fresh=false;drPlay()}}
+    s.result=drMake(players,cfg);s.result.revealed=false;{const fc=((DR.evs||[]).find(e=>e.id===DR.ev)||{}).format_config;if(fc&&fc.players&&players.length!==+fc.players)s.result.warn.push(`This event was planned for ${fmtN(fc)} but ${players.length} ${drU().p} were drawn.`)}DR.fresh=true;toast("Draw generated")});if(DR.fresh){DR.fresh=false;drPlay()}}
 });
 Object.assign(A,{
   async drimpreg(){const cur=$("#dr_in").value;
@@ -1746,13 +1879,110 @@ Object.assign(F,{
     toast("Player added to the event");HERO.c={};render();
   }
 });
+// ================= MULTI-SPORT EVENTS: one event > several sports > disciplines =================
+// Each discipline is saved as one row in public.events (so registration, draw, auction and scoring keep working),
+// tied together by group_key (the sport) and umbrella_key (the whole event).
+EV.mode=EV.mode||"one";
+const UMB_SPORTS=["Cricket","Football","Pickleball","Badminton","Chess","Table tennis","Darts","Carrom"];
+const UMB_CATS=["Open","Men","Women","Mixed","Boys (under 16)","Girls (under 16)","Seniors (45+)"];
+const UMB_PARTS=[["individual","Individual (one player)"],["pair","Doubles (a pair of players)"],["team","Team (players placed into teams)"]];
+const UMB_DEF={individual:8,pair:8,team:4};
+const RAQ=[["Men’s Singles","Men","individual"],["Women’s Singles","Women","individual"],["Men’s Doubles","Men","pair"],["Women’s Doubles","Women","pair"],["Mixed Doubles","Mixed","pair"]];
+const UMB_DISC={"Badminton":RAQ,"Table tennis":RAQ,
+  "Pickleball":[["Singles","Open","individual"],["Doubles","Open","pair"],["Mixed Doubles","Mixed","pair"]],
+  "Chess":[["Open Individual","Open","individual"],["Women’s Individual","Women","individual"],["Team Event","Open","team"]],
+  "Cricket":[["Team Tournament","Open","team"]],"Football":[["Team Tournament","Open","team"]],
+  "Darts":[["Singles","Open","individual"],["Doubles","Open","pair"]],"Carrom":[["Singles","Open","individual"],["Doubles","Open","pair"]]};
+const umbDisc=()=>({name:"",cat:"Open",part:"individual",size:"5",fee:"0",n:"8",format:"ko",groups:"2",advance:"2"});
+const umbSport=i=>({sport:UMB_SPORTS[i%UMB_SPORTS.length],custom:"",discs:[umbDisc()]});
+const UMB={name:"",venue:"",sports:[umbSport(0)]};
+const partLabel=v=>v.kind==="team"?`Team of ${v.team_size||"?"} players`:v.kind==="doubles"?"Pair (2 players)":"Individual";
+const umbKey=()=>(window.crypto&&crypto.randomUUID)?crypto.randomUUID():Date.now()+"-"+Math.random().toString(36).slice(2);
+function umbRead(){ // copy what is typed in the form into UMB so nothing is lost when blocks are rebuilt
+  const f=document.querySelector("form[data-f=umb]");if(!f)return;const fd=new FormData(f),out=[];
+  UMB.name=fd.get("uname")||"";UMB.venue=fd.get("uvenue")||"";
+  for(let si=0;fd.has("sp"+si);si++){const s={sport:fd.get("sp"+si),custom:fd.get("spc"+si)||"",discs:[]};
+    for(let di=0;fd.has(`dn${si}_${di}`);di++){const p=`${si}_${di}`,x=`x${p}_`;
+      s.discs.push({name:fd.get("dn"+p),cat:fd.get("dc"+p),part:fd.get("dp"+p),size:fd.get("dt"+p)||"5",fee:fd.get("df"+p),n:fd.get(x+"players")||"",format:fd.get(x+"format")||"ko",groups:fd.get(x+"groups")||"2",advance:fd.get(x+"advance")||"1"})}
+    out.push(s)}
+  if(out.length)UMB.sports=out;
+}
+function umbDiscHTML(si,di,d){
+  const p=`${si}_${di}`,kind=d.part==="team"?"team":d.part==="pair"?"doubles":"singles",unit=unitOf(kind),n=+d.n||"";
+  const fc=unit==="pairs"?{unit,players:n?Math.floor(n/2):"",cap:n,format:d.format,groups:+d.groups||2,advance:+d.advance||1}:{unit,players:n,format:d.format,groups:+d.groups||2,advance:+d.advance||1};
+  return `<div class="umbd"><h4>Discipline ${di+1}</h4><div class="g2">
+<div><label>Discipline name</label><input name="dn${p}" value="${E(d.name)}" placeholder="e.g. Men’s Singles"></div>
+<div><label>Category</label><select name="dc${p}">${UMB_CATS.map(c=>`<option ${c===d.cat?"selected":""}>${c}</option>`).join("")}</select></div>
+<div><label>Individual, pair or team?</label><select name="dp${p}" data-umb="part" data-si="${si}" data-di="${di}" data-prev="${d.part}">${UMB_PARTS.map(([v,l])=>`<option value="${v}" ${v===d.part?"selected":""}>${l}</option>`).join("")}</select></div>
+${d.part==="team"?`<div><label>Players per team</label><input name="dt${p}" type="number" min="2" max="30" value="${E(d.size)}"></div>`:""}
+<div><label>Fee per player (₹)</label><input name="df${p}" type="number" min="0" value="${E(d.fee)}"></div></div>
+<details open><summary>Entries and format</summary>${fmtFields(fc,`x${p}_`)}</details></div>`;
+}
+const umbBody=()=>UMB.sports.map((s,si)=>`<div class="umbs"><h4>Sport ${si+1}</h4><div class="g2">
+<div><label>Sport</label><select name="sp${si}" data-umb="sport" data-si="${si}">${UMB_SPORTS.concat(["Other"]).map(x=>`<option ${x===s.sport?"selected":""}>${x}</option>`).join("")}</select></div>
+${s.sport==="Other"?`<div><label>Sport name</label><input name="spc${si}" value="${E(s.custom)}" placeholder="e.g. Volleyball"></div>`:""}
+<div><label>How many disciplines in this sport?</label><input name="nd${si}" type="number" min="1" max="12" value="${s.discs.length}" data-umb="nd" data-si="${si}"></div></div>
+<button type="button" class="s o" data-act="umbsuggest" data-id="${si}">Suggest standard disciplines</button>
+${s.discs.map((d,di)=>umbDiscHTML(si,di,d)).join("")}</div>`).join("");
+const umbForm=()=>`<form class="card" data-f="umb" data-fmtform><h3>Multi-sport event</h3>
+<p class="m">One event name with several sports under it. Each sport has its own disciplines (for example Men’s Singles or Mixed Doubles), and each discipline is Individual, a Doubles pair or a Team, with its own fee, entries and format.</p>
+<div class="g2"><div><label>Event name</label><input name="uname" value="${E(UMB.name)}" placeholder="e.g. Terrace Olympics 2026"></div>
+<div><label>Venue (optional)</label><input name="uvenue" value="${E(UMB.venue)}"></div>
+<div><label>How many sports?</label><input name="ns" type="number" min="1" max="12" value="${UMB.sports.length}" data-umb="ns"></div></div>
+<div id="umbBody">${umbBody()}</div><button class="g">Create multi-sport event</button></form>`;
+const evModeBar=()=>`<h3 style="margin-top:24px">Add an event</h3><div class="sub"><button type="button" data-act="evmode" data-id="one" class="${EV.mode!=="multi"?"on":""}">One sport</button><button type="button" data-act="evmode" data-id="multi" class="${EV.mode==="multi"?"on":""}">Multi-sport event</button></div>`;
+const umbSections=(cards,adm,card)=>{const keys=[...new Set(cards.filter(c=>c.umb).map(c=>c.umb))];
+  return keys.map(k=>{const cs=cards.filter(c=>c.umb===k),all=cs.flatMap(c=>c.items),ven=(all.find(x=>x.venue)||{}).venue;
+    return `<section class="umb"><div class="umbh"><div><h3>${E(cs[0].umbName)}</h3><div class="m">${cs.length} sport${cs.length>1?"s":""} · ${all.length} discipline${all.length>1?"s":""}${ven?" · "+E(ven):""}</div></div>${adm?`<button class="s d" data-act="delumb" data-id="${E(k)}">Delete whole event</button>`:""}</div><div class="grid">${cs.map(card).join("")}</div></section>`}).join("")};
+Object.assign(F,{
+  async umb(fd){
+    if(!isAdm()||!live())return toast("Only admins can add events in a live edition.");
+    const un=(fd.get("uname")||"").trim();if(!un)return toast("Enter the event name.");
+    const venue=(fd.get("uvenue")||"").trim()||null,uk=umbKey(),rows=[],seen=new Set((EV.list||[]).map(e=>e.name.toLowerCase()));
+    for(let si=0;fd.has("sp"+si);si++){
+      let sport=fd.get("sp"+si);if(sport==="Other")sport=(fd.get("spc"+si)||"").trim();
+      if(!sport)return toast(`Sport ${si+1}: enter the sport name.`);
+      const gk=umbKey();
+      for(let di=0;fd.has(`dn${si}_${di}`);di++){
+        const p=`${si}_${di}`,disc=(fd.get("dn"+p)||"").trim(),part=fd.get("dp"+p),kind=part==="team"?"team":part==="pair"?"doubles":"singles",fx=`x${p}_`;
+        if(!disc)return toast(`${sport}, discipline ${di+1}: enter the discipline name.`);
+        const name=`${sport} – ${disc}`;
+        if(seen.has(name.toLowerCase()))return toast(`“${name}” already exists or appears twice. Give each discipline its own name.`);seen.add(name.toLowerCase());
+        fd.set(fx+"unit",unitOf(kind));const c=fmtCfg(fd,fx),pl=fmtPlan(c);if(pl.err)return toast(`${name}: ${pl.err}`);
+        const size=kind==="team"?+fd.get("dt"+p):kind==="doubles"?2:1;if(kind==="team"&&!(size>=2))return toast(`${name}: enter the players per team (at least 2).`);
+        rows.push({edition_id:S.ed.id,name,fee:+fd.get("df"+p)||0,capacity:kind==="team"?null:(c.cap||c.players),format_config:c,kind,group_key:gk,group_name:sport,umbrella_key:uk,umbrella_name:un,discipline:disc,category:fd.get("dc"+p),team_size:size,venue});
+      }
+    }
+    if(!rows.length)return toast("Add at least one sport with one discipline.");
+    if(chk(await sb.from("events").insert(rows))){toast(`Created ${un}: ${new Set(rows.map(r=>r.group_key)).size} sport(s), ${rows.length} discipline(s)`);
+      UMB.name="";UMB.venue="";UMB.sports=[umbSport(0)];BN.c={};HERO.c={};render()}
+  }
+});
+Object.assign(A,{
+  evmode(m){umbRead();EV.mode=m;render()},
+  umbsuggest(si){umbRead();const s=UMB.sports[+si],nm=s.sport==="Other"?s.custom.trim():s.sport,pre=UMB_DISC[nm];
+    if(!pre)return toast("There is no standard list for this sport. Set its number of disciplines and fill them in.");
+    s.discs=pre.map(([n,c,t])=>({...umbDisc(),name:n,cat:c,part:t,n:String(UMB_DEF[t])}));$("#umbBody").innerHTML=umbBody();toast(`${pre.length} disciplines suggested for ${nm}. Edit them as needed.`)},
+  async delumb(key){const it=EV.list.filter(e=>e.umbrella_key===key);if(it.length)await delEvents(it.map(e=>e.id),it[0].umbrella_name||"this event")}
+});
+document.addEventListener("input",e=>{if(e.target.closest&&e.target.closest("form[data-f=umb]"))umbRead()});
+document.addEventListener("change",e=>{const t=e.target,k=t.dataset&&t.dataset.umb;if(!k)return;
+  const old=t.dataset.prev;umbRead();const si=+t.dataset.si,di=+t.dataset.di,clamp=(v,hi)=>Math.max(1,Math.min(hi,Math.floor(+v)||1));
+  if(k==="ns"){const n=clamp(t.value,12);while(UMB.sports.length<n)UMB.sports.push(umbSport(UMB.sports.length));UMB.sports.length=n}
+  else if(k==="nd"){const s=UMB.sports[si],n=clamp(t.value,12);while(s.discs.length<n)s.discs.push(umbDisc());s.discs.length=n}
+  else if(k==="part"){const d=UMB.sports[si].discs[di];if(+d.n===UMB_DEF[old])d.n=String(UMB_DEF[d.part])}
+  const b=$("#umbBody");if(b)b.innerHTML=umbBody();const ns=document.querySelector("form[data-f=umb] [name=ns]");if(ns)ns.value=UMB.sports.length});
+// ==============================================================================================
+
 window.addEventListener("resize",()=>{const hd=$("header");if(hd)document.documentElement.style.setProperty("--hh",hd.offsetHeight+"px")});
 document.addEventListener("input",e=>{const fm=e.target.closest&&e.target.closest("form[data-fmtform]");
-  if(fm){const fd=new FormData(fm),c=fmtCfg(fd);fm.querySelectorAll(".grpf").forEach(x=>x.style.display=c.format==="rrko"?"":"none");
-    const pv=fm.querySelector(".fmtprev");if(pv)pv.innerHTML=c.players?fmtPrev(c):`<p class="m" style="margin:10px 0">Enter the number of players to see how many progress from each round.</p>`;return}
+  if(fm){const fd=new FormData(fm);
+    fm.querySelectorAll(".fmtblk").forEach(b=>{const c=fmtCfg(fd,b.dataset.px);b.querySelectorAll(".grpf").forEach(x=>x.style.display=c.format==="rrko"?"":"none");
+      const pv=b.querySelector(".fmtprev");if(pv)pv.innerHTML=c.players?fmtPrev(c):`<p class="m" style="margin:10px 0">Enter the number of ${c.unit==="pairs"?"players":c.unit} to see how many progress from each round.</p>`});
+    const k=fd.get("kind");if(k)fm.querySelectorAll("[data-k]").forEach(x=>x.style.display=x.dataset.k.split(" ").includes(k)?"":"none");return}
   if(e.target.dataset.filt!=="mem")return;const q=e.target.value.trim().toLowerCase();
   document.querySelectorAll("[data-mem-row]").forEach(r=>r.style.display=r.dataset.memRow.includes(q)?"":"none")});
-document.addEventListener("submit",async e=>{const f=e.target.dataset.f;if(!f)return;e.preventDefault();const b=e.target.querySelector("button");if(b)b.disabled=true;
+document.addEventListener("submit",async e=>{const f=e.target.dataset.f;if(!f)return;e.preventDefault();const b=e.submitter||e.target.querySelector("button");if(b)b.disabled=true;
   try{await F[f](new FormData(e.target))}catch(err){toast(err.message)}finally{if(b)b.disabled=false}});
 document.addEventListener("click",e=>{
   const a=e.target.closest("[data-act]");if(a){e.preventDefault();A[a.dataset.act](a.dataset.id);return}
@@ -1764,6 +1994,8 @@ document.addEventListener("change",e=>{const k=e.target.dataset.chg,v=e.target.v
   else if(k==="role"){if(S.role==="super")setRole(e.target.dataset.uid,v)}
   else if(k==="auev"){AU.ev=+v;AU.loaded=null;render()}
   else if(k==="drev"){DR.ev=+v;render()}
+  else if(k==="drpots")dr(s=>{drPg(s).pots=v==="1"});
+  else if(k==="drpot")dr(s=>{const p=drPg(s).pool[+e.target.dataset.i];if(p)p.pot=v});
   else if(k==="drfmt")document.querySelectorAll(".grpf").forEach(x=>x.style.display=v==="rrko"?"":"none");
   else if(k==="autm")au(s=>{s.cur.teamId=v});
   else if(k==="aubid")au(s=>{s.cur.bid=parseFloat(v)||0})});
