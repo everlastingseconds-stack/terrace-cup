@@ -248,6 +248,9 @@ main.anim .grid>:nth-child(5){animation-delay:.24s}main.anim .grid>:nth-child(6)
 .auwide .sq div{height:24px;box-sizing:border-box;align-items:center;padding:0}
 .auwide .sq div span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:8px}
 .auwide .sq .em{color:var(--muted);opacity:.5;font-style:italic}
+.stg{border:1px solid var(--line);border-left:3px solid var(--gold);padding:10px 12px;margin:8px 0;background:rgba(255,255,255,.02)}
+.stgh{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.stgh b{color:var(--gold2);min-width:62px}.stgh select{flex:1;min-width:180px;margin:0}
+.stghint{font-size:13px;margin:8px 0 0}
 </style>
 </head>
 <body>
@@ -796,7 +799,111 @@ const evTop0=(v,n)=>{const s=sportOf(v.name),c=+v.capacity||0,t=`font-size:13px;
 
 
 // ---------- event formats: players, groups, how many progress ----------
+// ---------- custom stage plans: the organiser enters every stage, nothing is assumed ----------
+const FMTB={n:0};
+const STG_T=[["","Choose the stage type"],["ko","Knockout round"],["rr","Round robin (one group)"],["groups","Round robin in groups"]];
+const stgNum=(fd,k)=>{const v=fd.get(k);return v===null||v===""?null:+v};
+function stgParse(fd,px=""){const out=[];
+  for(let i=0;fd.has(px+"stt_"+i);i++){const t=fd.get(px+"stt_"+i)||"",s={t},n=k=>stgNum(fd,px+k+"_"+i);
+    if(t==="ko"){s.o=n("sto");s.b=n("stb")}else if(t==="rr")s.o=n("sto");else if(t==="groups"){s.g=n("stg");s.q=n("stq")}
+    out.push(s)}
+  return out}
+// A standard bracket written as stages: the first round carries the byes, the last stage is the final.
+function stgKO(q){const out=[];if(q<2)return out;const size=1<<Math.ceil(Math.log2(q));
+  for(let len=size/2;len>=1;len/=2)out.push({t:"ko",b:len===size/2?size-q:0,o:len});return out}
+function stgFromLegacy(c){const N=+c.players||0;if(N<2||(c.format!=="ko"&&c.format!=="rrko"))return []; // only a saved format is turned into stages; nothing is filled in for a new event
+  if(c.format==="rrko"){const G=+c.groups||1,K=+c.advance||1;return [G===1?{t:"rr",o:K}:{t:"groups",g:G,q:K},...stgKO(G*K)]}
+  return stgKO(N)}
+function stgCanon(st){const out=[];
+  for(let i=0;i<st.length;i++){const s=st[i],last=i===st.length-1;
+    if(s.t==="ko")out.push({t:"ko",b:+s.b||0,o:last?1:+s.o});
+    else if(s.t==="rr"){if(last)return null;out.push({t:"rr",o:+s.o})}
+    else if(s.t==="groups")out.push({t:"groups",g:+s.g,q:+s.q});
+    else return null}
+  return out}
+// When a plan is exactly a plain knockout, or groups then a plain knockout, it is stored in the older format too,
+// so Scoring, the PDF and everything else built on those formats keep working.
+function stgCompile(c){
+  if(stgPlan(c).err)return null;
+  const st=stgCanon(c.stages||[]);if(!st||!st.length)return null;
+  const j=JSON.stringify(st),N=+c.players,same=x=>JSON.stringify(stgFromLegacy(x))===j;
+  if(same({format:"ko",players:N}))return{format:"ko"};
+  const f=st[0];
+  if(f.t==="groups"&&same({format:"rrko",players:N,groups:f.g,advance:f.q}))return{format:"rrko",groups:f.g,advance:f.q};
+  if(f.t==="rr"&&same({format:"rrko",players:N,groups:1,advance:f.o}))return{format:"rrko",groups:1,advance:f.o};
+  return null}
+function stgPlan(c){
+  const u=c.unit||"players",N=+c.players||0,st=c.stages||[],steps=[];
+  if(u==="pairs"&&(+c.cap||0)%2)return{err:"Doubles needs an even number of players."};
+  if(N<2)return{err:u==="pairs"?"Enter at least 4 players (2 pairs).":`Enter at least 2 ${u}.`};
+  if(!st.length)return{err:"Add the stages, in order, up to the final."};
+  let cur=N;
+  for(let i=0;i<st.length;i++){
+    const s=st[i],last=i===st.length-1,k=i+1,bad=m=>({err:`Stage ${k}: ${m}`,at:i}),prev=steps[i-1],from=prev?`${prev.src} of Stage ${i}`:`all ${N} ${u}`;
+    if(cur<2)return bad("the stage before it already leaves a single winner, so this stage is not needed. Remove it.");
+    if(!["ko","rr","groups"].includes(s.t))return bad("choose the stage type.");
+    if(s.t==="ko"){
+      const b=+s.b||0,m=(cur-b)/2;
+      if(b<0)return bad("byes cannot be negative.");
+      if(!Number.isInteger(m))return bad(`${cur} ${u} with ${b} bye${b===1?"":"s"} leaves an odd number to pair. Change the byes by one.`);
+      if(m<1)return bad(`${cur} ${u} with ${b} bye${b===1?"":"s"} leaves no match to play.`);
+      const w=m+b;
+      if(last){
+        if(s.o!=null&&s.o!==1)return bad("this is the last stage and it decides the winner, so leave “qualify” empty.");
+        if(w!==1)return bad(`this is the last stage, so it must decide the winner, but a knockout round of ${cur} ${u} leaves ${w}. Add the stages that follow it.`);
+        steps.push({name:`Stage ${k}: Knockout final`,in:cur,out:1,final:true,note:"1 match",from});
+      }else{
+        if(!(s.o>=1))return bad("enter how many qualify to the next stage.");
+        if(s.o<w||s.o>w+m)return bad(`${cur} ${u}${b?` with ${b} bye${b===1?"":"s"}`:""} give ${m} ${m>1?"matches":"match"} and ${w} ${w>1?"winners":"winner"}. Best losers can add up to ${m} more, so enter a number from ${w} to ${w+m}.`);
+        const bl=s.o-w;
+        steps.push({name:`Stage ${k}: Knockout round`,in:cur,out:s.o,note:`${m} ${m>1?"matches":"match"}${b?`, ${b} ${b>1?"byes":"bye"}`:""} → ${w} ${w>1?"winners":"winner"}${bl?` + ${bl} best ${bl>1?"losers":"loser"}`:""}`,src:`${w} ${w>1?"winners":"winner"}${bl?` and ${bl} best ${bl>1?"losers":"loser"}`:""}`,from});
+        cur=s.o}
+    }else if(s.t==="rr"){
+      const mt=cur*(cur-1)/2;
+      if(last){
+        if(s.o!=null&&s.o!==1)return bad("this is the last stage and the table leader wins, so leave “qualify” empty.");
+        steps.push({name:`Stage ${k}: Round robin`,in:cur,out:1,final:true,note:`${mt} ${mt>1?"matches":"match"}, the table leader wins`,from});
+      }else{
+        if(!(s.o>=1)||s.o>=cur)return bad(`enter how many qualify, from 1 to ${cur-1}.`);
+        steps.push({name:`Stage ${k}: Round robin`,in:cur,out:s.o,note:`${mt} ${mt>1?"matches":"match"}, top ${s.o} qualify`,src:`top ${s.o} of the table`,from});cur=s.o}
+    }else{
+      if(last)return bad("groups cannot be the last stage. Add a stage after them that decides the winner.");
+      const G=+s.g,q=+s.q;
+      if(!(G>=2))return bad("enter at least 2 groups (use a single round robin for one group).");
+      const small=Math.floor(cur/G),big=Math.ceil(cur/G);
+      if(small<2)return bad(`${cur} ${u} cannot fill ${G} groups of at least 2.`);
+      if(!(q>=1)||q>small)return bad(`enter how many qualify from each group, from 1 to ${small}.`);
+      steps.push({name:`Stage ${k}: Groups`,in:cur,out:G*q,note:`${G} groups of ${small===big?big:small+" to "+big}, top ${q} from each`,src:`top ${q} from each group`,from});cur=G*q}
+  }
+  return{steps}}
+function stgRowsHTML(px,st,bid){
+  if(!st.length)return `<p class="m stgempty">No stages yet. Add the first stage, then every stage after it, up to the final.</p>`;
+  return st.map((s,i)=>{const v=x=>x==null?"":E(x),last=i===st.length-1;
+    const f=s.t==="ko"?`<div><label>Qualify to the next stage</label><input name="${px}sto_${i}" type="number" min="1" value="${v(s.o)}" placeholder="e.g. 12"></div><div><label>Byes (optional)</label><input name="${px}stb_${i}" type="number" min="0" value="${v(s.b)}"></div>`
+      :s.t==="rr"?`<div><label>Qualify to the next stage</label><input name="${px}sto_${i}" type="number" min="1" value="${v(s.o)}"></div>`
+      :s.t==="groups"?`<div><label>Number of groups</label><input name="${px}stg_${i}" type="number" min="2" value="${v(s.g)}"></div><div><label>Qualify from each group</label><input name="${px}stq_${i}" type="number" min="1" value="${v(s.q)}"></div>`:"";
+    return `<div class="stg"><div class="stgh"><b>Stage ${i+1}</b><select name="${px}stt_${i}" data-stgt="1">${STG_T.map(([k,l])=>`<option value="${k}" ${k===(s.t||"")?"selected":""}>${l}</option>`).join("")}</select><button type="button" class="s d" data-act="stgdel" data-id="${bid}|${i}">Remove</button></div>${f?`<div class="g2">${f}</div>`:""}${last&&s.t&&s.t!=="groups"?`<p class="m stghint">If this is the last stage, leave “qualify” empty: it decides the winner.</p>`:""}</div>`}).join("")}
+function stgPreview(b,fd){const c=fmtCfg(fd,b.dataset.px),pv=b.querySelector(".fmtprev");
+  if(pv)pv.innerHTML=c.players?fmtPrev(c):`<p class="m" style="margin:10px 0">Enter the number of ${c.unit==="pairs"?"players":c.unit}, then add the stages.</p>`}
+function stgRender(b,mut){const form=b.closest("form"),px=b.dataset.px;let st=stgParse(new FormData(form),px);if(mut)st=mut(st);
+  b.querySelector(".stglist").innerHTML=stgRowsHTML(px,st,b.dataset.bid);stgPreview(b,new FormData(form));
+  if(form.dataset.f==="umb"&&typeof umbRead==="function")umbRead()}
+const fmtCfg=(fd,px="")=>{const unit=fd.get(px+"unit")||"players",raw=+fd.get(px+"players")||0,
+  c={players:unit==="pairs"?Math.floor(raw/2):raw,format:"staged",unit,stages:stgParse(fd,px).map(s=>{const o={t:s.t};
+    if(s.t==="ko"){if(s.o!=null)o.o=s.o;if(s.b)o.b=s.b}else if(s.t==="rr"){if(s.o!=null)o.o=s.o}else if(s.t==="groups"){o.g=s.g;o.q=s.q}return o})};
+  if(unit==="pairs")c.cap=raw;
+  const k=stgCompile(c);if(k){c.format=k.format;if(k.groups){c.groups=k.groups;c.advance=k.advance}}
+  return c};
+const fmtFields=(c,px="")=>{c=Object.assign({players:"",unit:"players"},c||{});
+  const u=c.unit,n=px,bid="b"+(++FMTB.n),shown=u==="pairs"?(c.cap||(c.players?c.players*2:"")):c.players,lab=u==="pairs"?"players (pairs are made in the Draw)":u;
+  const stages=Array.isArray(c.stages)?c.stages:stgFromLegacy(c),cc=Object.assign({},c,{stages});
+  return `<div class="fmtblk" data-px="${px}" data-bid="${bid}"><input type="hidden" name="${n}unit" value="${u}"><div class="g2"><div><label>Number of ${lab}</label><input name="${n}players" type="number" min="2" max="512" value="${shown}"></div></div>
+  <label style="margin-top:12px">Stages, in order, up to the final</label><div class="stglist">${stgRowsHTML(px,stages,bid)}</div>
+  <button type="button" class="s o" style="margin-top:8px" data-act="stgadd" data-id="${bid}">+ Add a stage</button>
+  <div class="fmtprev">${cc.players?fmtPrev(cc):`<p class="m" style="margin:10px 0">Enter the number of ${u==="pairs"?"players":u}, then add the stages.</p>`}</div></div>`};
+
 function fmtPlan(c){
+  if(Array.isArray(c.stages))return stgPlan(c);
   const u=c.unit||"players",N=+c.players||0;if(u==="pairs"&&(+c.cap||0)%2)return{err:"Doubles needs an even number of players."};
   if(N<2)return{err:u==="pairs"?"Enter at least 4 players (2 pairs).":`Enter at least 2 ${u}.`};
   const steps=[];let q=N;
@@ -814,19 +921,13 @@ function fmtPlan(c){
     steps.push({name:rname(len),in:first?q:len*2,out:len,note:byes?`${byes} bye${byes>1?"s":""}`:""})}
   return{steps};
 }
-const fmtCfg=(fd,px="")=>{const f=fd.get(px+"format")==="rrko"?"rrko":"ko",unit=fd.get(px+"unit")||"players",raw=+fd.get(px+"players")||0,c={players:unit==="pairs"?Math.floor(raw/2):raw,format:f,unit};if(unit==="pairs")c.cap=raw;if(f==="rrko"){c.groups=+fd.get(px+"groups")||2;c.advance=+fd.get(px+"advance")||1}return c};
 const fmtN=c=>c.unit==="pairs"?`${c.cap||c.players*2} players (${c.players} pairs)`:`${c.players} ${c.unit||"players"}`;
 const unitOf=k=>k==="team"?"teams":k==="doubles"?"pairs":"players";
 const kindLabel={singles:"Singles",doubles:"Doubles",team:"Team event"};
 const fmtPrev=c=>{const p=fmtPlan(c);if(p.err)return `<div class="note">${E(p.err)}</div>`;
-  return `<div class="plan">${p.steps.map(x=>`<div class="ps"><b>${E(x.name)}</b><span class="pp">${x.in} ${c.unit||"players"} → ${x.name==="Final"?"champion":x.out+" progress"}</span>${x.note?`<span class="m">${E(x.note)}</span>`:""}</div>`).join("")}</div>`};
-const fmtLine=c=>{if(!c||!c.players||fmtPlan(c).err)return "";return c.format==="rrko"?`Groups, then knockout · ${fmtN(c)} · ${c.groups} group${c.groups>1?"s":""}, top ${c.advance} progress`:`Knockout · ${fmtN(c)}`};
-const fmtFields=(c,px="")=>{c=Object.assign({players:"",format:"ko",groups:2,advance:2,unit:"players"},c||{});const g=c.format==="rrko"?"":`style="display:none"`,u=c.unit,U=u[0].toUpperCase()+u.slice(1),n=px+"",shown=u==="pairs"?(c.cap||(c.players?c.players*2:"")):c.players,lab=u==="pairs"?"players (pairs are made in the Draw)":u;
-  return `<div class="fmtblk" data-px="${px}"><input type="hidden" name="${n}unit" value="${u}"><div class="g2"><div><label>Number of ${lab}</label><input name="${n}players" type="number" min="2" max="512" value="${shown}"></div>
-  <div><label>Format</label><select name="${n}format"><option value="ko" ${c.format==="ko"?"selected":""}>Knockout only</option><option value="rrko" ${c.format==="rrko"?"selected":""}>Round robin + knockout</option></select></div>
-  <div class="grpf" ${g}><label>Number of groups</label><input name="${n}groups" type="number" min="1" value="${c.groups}"></div>
-  <div class="grpf" ${g}><label>${U} progressing from each group</label><input name="${n}advance" type="number" min="1" value="${c.advance}"></div></div>
-  <div class="fmtprev">${c.players?fmtPrev(c):`<p class="m" style="margin:10px 0">Enter the number of ${u==="pairs"?"players":u} to see how many progress from each round.</p>`}</div></div>`};
+  return `<div class="plan">${p.steps.map(x=>`<div class="ps"><b>${E(x.name)}</b><span class="pp">${x.in} ${c.unit||"players"} → ${x.final||x.name==="Final"?"champion":x.out+" progress"}</span>${x.note?`<span class="m">${E(x.note)}</span>`:""}</div>`).join("")}</div>`};
+const fmtLine=c=>{if(!c||!c.players||fmtPlan(c).err)return "";if(c.format==="staged"){const p=stgPlan(c);if(p.err)return "";return `Custom stages · ${fmtN(c)} · `+p.steps.map(x=>`${x.name.replace(/^Stage \d+: /,"")} ${x.in}${x.final?"":"→"+x.out}`).join(", ")}
+  return c.format==="rrko"?`Groups, then knockout · ${fmtN(c)} · ${c.groups} group${c.groups>1?"s":""}, top ${c.advance} progress`:`Knockout · ${fmtN(c)}`};
 const fmtExtras=v=>{const l=fmtLine(v.format_config);
   return (l?`<div class="m" style="font-size:13px;margin-bottom:6px">${E(l)}</div>`:"")+(isAdm()&&live()?`<details><summary>${v.format_config?"Edit format":"Set format"}</summary><form data-f="evfmt" data-fmtform><input type="hidden" name="id" value="${v.id}"><input type="hidden" name="kind" value="${E(v.kind||"")}">${fmtFields(Object.assign({unit:unitOf(v.kind)},v.format_config||{players:v.capacity||""}))}<button class="g">Save format</button></form></details>`:"")};
 // ---------- an umbrella event (or a sport with singles + doubles) counts as ONE event ----------
@@ -1180,7 +1281,7 @@ SC.bridge.listImports=async()=>{
     const draw=res&&res.revealed!==false&&(res.rounds||res.groups)?res:null;
     const teams=(((a.data||[]).find(x=>x.event_id===e.id)||{}).state?.teams||[]).filter(t=>t.captain||(t.squad||[]).length);
     const pg=((d.data||[]).find(x=>x.event_id===e.id)||{}).state?.pairing,pairs=e.kind==="doubles"?(pg&&pg.confirmed?(pg.pairs||[]).map(x=>`${x.a.name} / ${x.b.name}`):[]):null;
-    return {id:e.id,name:e.name,draw,
+    return {id:e.id,name:e.name,draw,staged:!!(res&&res.format==="staged"&&res.revealed!==false),
       auction:teams.map(t=>({name:t.name,captain:t.captain||"",squad:(t.squad||[]).map(s=>s.name)})),
       players:pairs?pairs:(p.data||[]).filter(x=>x.event_id===e.id).map(x=>x.full_name).filter(Boolean)};
   });
@@ -1259,6 +1360,7 @@ V.score=async()=>{
   let se=SC.events.find(x=>x.source&&x.source.portalEventId===SC.pe);
   const row=evs.find(e=>e.id===SC.pe),team=!!row&&row.kind==="team";
   if(!se&&imp&&SC.canEdit&&(team||imp.draw)){se=scBuild(imp,team,row);SC.bridge.setEvents(p=>[...p,se])} // an admin opening a team event, or an event that has a draw, sets scoring up automatically
+  if(!se&&!team&&imp&&imp.staged){SC.focus=null;return head+empty("Custom stage plan","This event uses a custom stage plan. Its draw is on the Draw tab. Scoring for custom stage plans is not set up yet; plain knockout and groups-then-knockout events score as before.")}
   if(!se){SC.focus=null;return head+(team||(imp&&imp.draw)?empty("Scoring has not started","An admin will set it up when this event begins."):empty("No draw yet for this event",SC.canEdit?"Generate it on the Draw tab and it will appear here automatically.":"The draw will appear here once it has been made."))}
   if(team&&SC.canEdit&&imp)se=scSyncTeams(se,imp)||se;
   SC.focus=se.id;SC.emit();
@@ -1725,7 +1827,54 @@ function drBracket(r1){
     rounds.push(nxt);prev=nxt}
   return rounds;
 }
+// ---------- draw for a custom stage plan: stage 1 is drawn now, later stages follow from the results ----------
+function drStagePairs(players,b,avoid){let best=null;
+  for(let t=0;t<200;t++){const sh=shuf(players),byeP=sh.slice(0,b),rest=sh.slice(b),pairs=[];
+    for(let i=0;i<rest.length;i+=2)pairs.push([rest[i],rest[i+1]]);
+    const bad=avoid?pairs.filter(p=>tk(p[0])&&tk(p[0])===tk(p[1])).length:0;
+    if(!best||bad<best.bad)best={byeP,pairs,bad};if(!bad||!avoid)break}
+  const ms=[...best.byeP.map(p=>({a:sl(p),b:{bye:true}})),...best.pairs.map(p=>({a:sl(p[0]),b:sl(p[1])}))];
+  return{matches:shuf(ms),bad:best.bad}}
+function drMakeStaged(players,cfg){
+  const avoid=cfg.same!=="yes",warn=[],st=cfg.stages||[],res={format:"staged",same:cfg.same,players,created:new Date().toISOString(),stages:[]};
+  const names=players.map(p=>p.name.toLowerCase());if(new Set(names).size<names.length)warn.push("Some names appear more than once. Check the player list.");
+  const pl=stgPlan({players:players.length,unit:cfg.unit||"players",stages:st});
+  pl.steps.forEach((x,i)=>res.stages.push({n:i+1,t:st[i].t,name:x.name,in:x.in,out:x.out,note:x.note||"",from:x.from||"",final:!!x.final}));
+  const s1=st[0],r1=res.stages[0];
+  if(s1.t==="ko"){const o=drStagePairs(players,+s1.b||0,avoid);r1.matches=o.matches;if(o.bad)warn.push(`${o.bad} first-round match(es) pair teammates. This could not be avoided with these teams.`)}
+  else if(s1.t==="rr"){const g=shuf(players);r1.groups=[{name:"Group A",players:g,fixtures:drRR(g)}];warn.push("Everyone plays everyone in this stage, so teammates will meet.")}
+  else{const o=drGroups(players,+s1.g,avoid);r1.groups=o.groups.map((m,i)=>({name:"Group "+String.fromCharCode(65+i),players:m,fixtures:drRR(m)}));
+    if(o.bad)warn.push(`${o.bad} teammate pair(s) ended up in the same group and will meet in the group stage. This could not be avoided with these teams.`)}
+  res.warn=warn;return res}
+function drShowStaged(r,rv){const u=drU(),st=r.stages||[];
+  let h=rv?`<div class="card spot"><div class="m">${u.s} ${rv.i} of ${rv.n}</div><div class="pn">${E(rv.last.name)}</div>${rv.last.team?`<span class="tm">${E(rv.last.team)}</span>`:""}</div>`:"";
+  h+=`<div class="card"><h3>Custom stage plan</h3><div class="m">${r.players.length} ${u.p} · ${st.length} stage${st.length>1?"s":""} · teammates in the first round: ${r.same==="yes"?"allowed":"not allowed"} · drawn ${new Date(r.created).toLocaleString("en-IN")}</div>${rv?"":(r.warn||[]).map(w=>`<div class="note" style="margin-top:10px">${E(w)}</div>`).join("")}</div>`;
+  st.forEach((s,i)=>{
+    h+=`<h3>${E(s.name)}</h3><div class="m" style="margin-bottom:8px">${s.in} ${u.p} → ${s.final?"the winner is decided here":s.out+" qualify"}${s.note?" · "+E(s.note):""}</div>`;
+    if(i===0&&s.matches)h+=`<div class="card"><div class="grid">${s.matches.map((m,k)=>`<div class="mt"><div class="n"><span>M${k+1}</span>${m.b.bye?`<span class="chip pending">BYE</span>`:`<span class="vs">VS</span>`}</div><div class="side">${slotM(m.a,rv)}</div><div class="side">${slotM(m.b,rv)}</div></div>`).join("")}</div></div>`;
+    else if(i===0&&s.groups)h+=`<div class="grid">${s.groups.map(g=>`<div class="card"><h3 style="color:var(--gold2)">${E(g.name)}</h3>${g.players.map(p=>`<div>${slotM(sl(p),rv)}</div>`).join("")}${rv?"":g.fixtures.map((rd,k)=>`<div class="m" style="margin-top:10px">Matchday ${k+1}</div>${rd.map(m=>`<div style="font-size:14px">${E(m[0].name)} <span class="m">vs</span> ${E(m[1].name)}</div>`).join("")}`).join("")}</div>`).join("")}</div>`;
+    else h+=`<div class="card m">Enters: ${E(s.from||"")}. Its pairings are made once the stage before it has been played.</div>`});
+  return h}
+function drPdfStaged(docf,np,ev,r){
+  const W=297,H=210,st=r.stages||[],sum=`Custom stage plan | ${r.players.length} entrants | Teammates in round 1: ${r.same==="yes"?"allowed":"not allowed"} | Drawn ${new Date(r.created).toLocaleString("en-IN")}`;
+  let y=0;const page=x=>{np(W,H);pdfHead(docf(),ev,sum,W,x);y=48};
+  const line=(t,bold,size,col,lh,x=12)=>{if(y+lh>H-10)page("Custom stage plan (continued)");const doc=docf();doc.setFont("helvetica",bold?"bold":"normal");doc.setFontSize(size);doc.setTextColor(...col);doc.text(pdfFit(doc,t,W-12-x),x,y+lh-1);y+=lh};
+  page("Custom stage plan");
+  st.forEach((s,i)=>{
+    line(s.name,true,11,[209,18,47],7);
+    line(`${s.in} entrants -> ${s.final?"the winner is decided here":s.out+" qualify"}${s.note?" | "+s.note:""}`,false,9,[60,60,60],5);
+    if(i===0&&s.matches)s.matches.forEach((m,k)=>line(`M${k+1}: ${m.a.name}${m.a.team?" ("+m.a.team+")":""}  vs  ${m.b.bye?"BYE":m.b.name+(m.b.team?" ("+m.b.team+")":"")}`,false,8.5,[25,25,25],4.4,16));
+    else if(i===0&&s.groups)s.groups.forEach(g=>{line(g.name,true,9.5,[150,110,20],5.5,16);g.players.forEach((p,k)=>line(`${k+1}. ${p.name}${p.team?"  ("+p.team+")":""}`,false,8.5,[25,25,25],4.3,20));g.fixtures.forEach((rd,k)=>{line(`Matchday ${k+1}`,true,8,[150,110,20],4.6,20);rd.forEach(m=>line(`${m[0].name}  vs  ${m[1].name}`,false,8,[25,25,25],4,24))})});
+    else line(`Enters: ${s.from||""}. Pairings are made once the stage before it has been played.`,false,8.5,[90,90,90],4.6,16);
+    y+=4})}
+
+Object.assign(A,{
+  stgadd(bid){const b=document.querySelector(`.fmtblk[data-bid="${bid}"]`);if(b)stgRender(b,s=>[...s,{t:""}])},
+  stgdel(id){const [bid,i]=String(id).split("|"),b=document.querySelector(`.fmtblk[data-bid="${bid}"]`);if(b)stgRender(b,s=>s.filter((_,k)=>k!==+i))}
+});
+
 function drMake(players,cfg){
+  if(cfg.format==="staged")return drMakeStaged(players,cfg);
   const avoid=cfg.same!=="yes",warn=[],res={format:cfg.format,same:cfg.same,players,created:new Date().toISOString()};
   const names=players.map(p=>p.name.toLowerCase());if(new Set(names).size<names.length)warn.push("Some names appear more than once. Check the player list.");
   if(cfg.format==="ko"){const o=drKO(players,avoid);res.rounds=drBracket(o.r1);if(o.bad)warn.push(`${o.bad} first-round match(es) pair teammates. This could not be avoided with these teams.`)}
@@ -1834,7 +1983,7 @@ V.draw=async()=>{
 };
 function drSetup(s){const fc=((DR.evs||[]).find(e=>e.id===DR.ev)||{}).format_config,c=s.cfg,opt=(v,l,cur)=>`<option value="${v}" ${cur===v?"selected":""}>${l}</option>`;
   return `<div class="card"><h3>Draw setup</h3><form data-f="drgen">
-<div class="g2">${fc?`<input type="hidden" name="format" value="${fc.format}"><input type="hidden" name="groups" value="${fc.groups||2}"><input type="hidden" name="advance" value="${fc.advance||1}">`:`<div><label>Tournament format</label><select name="format" data-chg="drfmt">${opt("ko","Knockout only",c.format)}${opt("rrko","Round robin and knockout",c.format)}</select></div>`}
+<div class="g2">${fc?`<input type="hidden" name="format" value="${fc.format}"><input type="hidden" name="groups" value="${fc.groups||2}"><input type="hidden" name="advance" value="${fc.advance||1}">${fc.format==="staged"?`<input type="hidden" name="stages" value="${E(JSON.stringify(fc.stages||[]))}"><input type="hidden" name="punit" value="${fc.unit||"players"}">`:""}`:`<div><label>Tournament format</label><select name="format" data-chg="drfmt">${opt("ko","Knockout only",c.format)}${opt("rrko","Round robin and knockout",c.format)}</select></div>`}
 <div><label>Can teammates face each other in the first round?</label><select name="same">${opt("no","No, keep teammates apart",c.same)}${opt("yes","Yes, allowed",c.same)}</select></div>
 ${fc?"":`<div class="grpf" ${c.format==="rrko"?"":`style="display:none"`}><label>Number of groups (1 or more)</label><input name="groups" type="number" min="1" value="${c.groups}"></div>
 <div class="grpf" ${c.format==="rrko"?"":`style="display:none"`}><label>Players advancing from each group</label><input name="advance" type="number" min="1" value="${c.advance}"></div>`}</div>
@@ -1846,6 +1995,7 @@ ${drDbl()?`<input type="hidden" name="input" value="${E(s.input)}">${s.pairing&&
 const pk=s=>(s.name||"")+"|"+(s.team||"");
 const slotM=(s,rv)=>{if(rv&&s.name&&!rv.shown.has(pk(s)))return `<span class="q">? ? ?</span>`;const h=slotH(s);return rv&&rv.last&&pk(s)===pk(rv.last)?`<span class="hl">${h}</span>`:h};
 function drShow(r,rv){
+  if(r.format==="staged")return drShowStaged(r,rv);
   const real=r.rounds.flat().filter(m=>!m.a.bye&&!m.b.bye).length,gm=(r.groups||[]).reduce((a,g)=>a+g.fixtures.flat().length,0);
   let h=rv?`<div class="card spot"><div class="m">${drU().s} ${rv.i} of ${rv.n}</div><div class="pn">${E(rv.last.name)}</div>${rv.last.team?`<span class="tm">${E(rv.last.team)}</span>`:""}</div>`:"";
   h+=`<div class="card"><h3>${r.format==="ko"?"Knockout draw":"Round robin and knockout draw"}</h3><div class="m">${r.players.length} ${drU().p} · ${gm?gm+" group matches + ":""}${real} knockout matches · teammates in the first round: ${r.same==="yes"?"allowed":"not allowed"} · drawn ${new Date(r.created).toLocaleString("en-IN")}</div>${rv?"":(r.warn||[]).map(w=>`<div class="note" style="margin-top:10px">${E(w)}</div>`).join("")}</div>`;
@@ -1861,7 +2011,7 @@ function drBody(s,run){
     :`<div class="card"><h3>The draw is being conducted</h3><p class="m">It will appear here once it has been revealed. Check back in a moment.</p></div>`;
   return drShow(r);
 }
-function drOrder(r){const out=[];if(r.groups)r.groups.forEach(g=>g.players.forEach(p=>out.push(sl(p))));else r.rounds[0].forEach(m=>{if(m.a.name)out.push(m.a);if(m.b.name)out.push(m.b)});return out}
+function drOrder(r){const out=[];if(r.format==="staged"){const s=r.stages[0];if(s.matches)s.matches.forEach(m=>{out.push(m.a);if(m.b.name)out.push(m.b)});else s.groups.forEach(g=>g.players.forEach(p=>out.push(sl(p))));return out}if(r.groups)r.groups.forEach(g=>g.players.forEach(p=>out.push(sl(p))));else r.rounds[0].forEach(m=>{if(m.a.name)out.push(m.a);if(m.b.name)out.push(m.b)});return out}
 async function drPlay(){
   const r=DR.st&&DR.st.result,ev=DR.ev;if(!r||DR.playing||!isAdm())return;DR.playing=true;
   const alive=()=>$("#drOut")&&DR.ev===ev,wait=ms=>new Promise(x=>setTimeout(x,ms)),o=document.createElement("div");o.id="drCount";document.body.appendChild(o);
@@ -1876,8 +2026,10 @@ async function drPlay(){
 Object.assign(F,{
   drgen:async fd=>{if(DR.playing)return toast("The reveal is in progress.");if(drDbl()&&!(DR.st&&DR.st.pairing&&DR.st.pairing.confirmed))return toast("Confirm the pairs first.");DR.fresh=false;await dr(s=>{
     const players=drParse(fd.get("input")),cfg={format:fd.get("format"),same:fd.get("same"),groups:parseInt(fd.get("groups"))||2,advance:parseInt(fd.get("advance"))||1};
+    if(cfg.format==="staged"){try{cfg.stages=JSON.parse(fd.get("stages")||"[]")}catch(e){cfg.stages=[]}cfg.unit=fd.get("punit")||"players"}
     s.input=fd.get("input");s.cfg=cfg;
     if(players.length<2)return "Enter at least 2 players.";
+    if(cfg.format==="staged"){const pl=stgPlan({players:players.length,unit:cfg.unit,stages:cfg.stages});if(pl.err)return `The stage plan does not fit ${players.length} ${drU().p}. ${pl.err} Change the number on the Event registration tab, or add or remove players here.`}
     if(cfg.format==="rrko"){const small=Math.floor(players.length/cfg.groups);
       if(cfg.groups<1)return "Use at least 1 group.";
       if(small<2)return `Need at least ${cfg.groups*2} players for ${cfg.groups} groups.`;
@@ -1943,6 +2095,7 @@ function drPdf(items){
   const {jsPDF}=window.jspdf;let doc=null;
   const np=(w,h)=>{const o=w>h?"l":"p";if(!doc){doc=new jsPDF({unit:"mm",format:[w,h],orientation:o});return}doc.addPage([w,h],o)};
   items.forEach(({ev,r})=>{
+    if(r.format==="staged"){drPdfStaged(()=>doc,np,ev,r);return}
     const R=r.rounds,mc=R[0].length,bw=58,gx=14,pitch=17;
     const real=R.flat().filter(m=>!m.a.bye&&!m.b.bye).length,gm=(r.groups||[]).reduce((a,g)=>a+g.fixtures.flat().length,0);
     const sum=`${r.format==="ko"?"Knockout":"Round robin + knockout"} | ${r.players.length} players | ${gm?gm+" group matches, ":""}${real} knockout matches | Teammates in round 1: ${r.same==="yes"?"allowed":"not allowed"} | Drawn ${new Date(r.created).toLocaleString("en-IN")}`;
@@ -2053,7 +2206,7 @@ const UMB_DISC={"Badminton":RAQ,"Table tennis":RAQ,
   "Chess":[["Open Individual","Open","individual"],["Women’s Individual","Women","individual"],["Team Event","Open","team"]],
   "Cricket":[["Team Tournament","Open","team"]],"Football":[["Team Tournament","Open","team"]],
   "Darts":[["Singles","Open","individual"],["Doubles","Open","pair"]],"Carrom":[["Singles","Open","individual"],["Doubles","Open","pair"]]};
-const umbDisc=()=>({name:"",cat:"Open",part:"individual",size:"5",fee:"0",n:"8",format:"ko",groups:"2",advance:"2"});
+const umbDisc=()=>({name:"",cat:"Open",part:"individual",size:"5",fee:"0",n:"",stages:[]});
 const umbSport=i=>({sport:UMB_SPORTS[i%UMB_SPORTS.length],custom:"",discs:[umbDisc()]});
 const UMB={name:"",venue:"",fee:"0",sports:[umbSport(0)]};
 const partLabel=v=>v.kind==="team"?`Team of ${v.team_size||"?"} players`:v.kind==="doubles"?"Pair (2 players)":"Individual";
@@ -2063,13 +2216,13 @@ function umbRead(){ // copy what is typed in the form into UMB so nothing is los
   UMB.name=fd.get("uname")||"";UMB.venue=fd.get("uvenue")||"";UMB.fee=fd.get("ufee")||"0";
   for(let si=0;fd.has("sp"+si);si++){const s={sport:fd.get("sp"+si),custom:fd.get("spc"+si)||"",discs:[]};
     for(let di=0;fd.has(`dn${si}_${di}`);di++){const p=`${si}_${di}`,x=`x${p}_`;
-      s.discs.push({name:fd.get("dn"+p),cat:fd.get("dc"+p),part:fd.get("dp"+p),size:fd.get("dt"+p)||"5",fee:fd.get("df"+p),n:fd.get(x+"players")||"",format:fd.get(x+"format")||"ko",groups:fd.get(x+"groups")||"2",advance:fd.get(x+"advance")||"1"})}
+      s.discs.push({name:fd.get("dn"+p),cat:fd.get("dc"+p),part:fd.get("dp"+p),size:fd.get("dt"+p)||"5",fee:fd.get("df"+p),n:fd.get(x+"players")||"",stages:stgParse(fd,x)})}
     out.push(s)}
   if(out.length)UMB.sports=out;
 }
 function umbDiscHTML(si,di,d){
   const p=`${si}_${di}`,kind=d.part==="team"?"team":d.part==="pair"?"doubles":"singles",unit=unitOf(kind),n=+d.n||"";
-  const fc=unit==="pairs"?{unit,players:n?Math.floor(n/2):"",cap:n,format:d.format,groups:+d.groups||2,advance:+d.advance||1}:{unit,players:n,format:d.format,groups:+d.groups||2,advance:+d.advance||1};
+  const fc=unit==="pairs"?{unit,players:n?Math.floor(n/2):"",cap:n,stages:d.stages||[]}:{unit,players:n,stages:d.stages||[]};
   return `<div class="umbd"><h4>Discipline ${di+1}</h4><div class="g2">
 <div><label>Discipline name</label><input name="dn${p}" value="${E(d.name)}" placeholder="e.g. Men’s Singles"></div>
 <div><label>Category</label><select name="dc${p}">${UMB_CATS.map(c=>`<option ${c===d.cat?"selected":""}>${c}</option>`).join("")}</select></div>
@@ -2123,7 +2276,7 @@ Object.assign(A,{
   evmode(m){umbRead();EV.mode=m;render()},
   umbsuggest(si){umbRead();const s=UMB.sports[+si],nm=s.sport==="Other"?s.custom.trim():s.sport,pre=UMB_DISC[nm];
     if(!pre)return toast("There is no standard list for this sport. Set its number of disciplines and fill them in.");
-    s.discs=pre.map(([n,c,t])=>({...umbDisc(),name:n,cat:c,part:t,n:String(UMB_DEF[t])}));$("#umbBody").innerHTML=umbBody();toast(`${pre.length} disciplines suggested for ${nm}. Edit them as needed.`)},
+    s.discs=pre.map(([n,c,t])=>({...umbDisc(),name:n,cat:c,part:t}));$("#umbBody").innerHTML=umbBody();toast(`${pre.length} disciplines suggested for ${nm}. Edit them as needed.`)},
   async delumb(key){const it=EV.list.filter(e=>e.umbrella_key===key);if(it.length)await delEvents(it.map(e=>e.id),it[0].umbrella_name||"this event")}
 });
 document.addEventListener("input",e=>{if(e.target.closest&&e.target.closest("form[data-f=umb]"))umbRead()});
@@ -2131,15 +2284,16 @@ document.addEventListener("change",e=>{const t=e.target,k=t.dataset&&t.dataset.u
   const old=t.dataset.prev;umbRead();const si=+t.dataset.si,di=+t.dataset.di,clamp=(v,hi)=>Math.max(1,Math.min(hi,Math.floor(+v)||1));
   if(k==="ns"){const n=clamp(t.value,12);while(UMB.sports.length<n)UMB.sports.push(umbSport(UMB.sports.length));UMB.sports.length=n}
   else if(k==="nd"){const s=UMB.sports[si],n=clamp(t.value,12);while(s.discs.length<n)s.discs.push(umbDisc());s.discs.length=n}
-  else if(k==="part"){const d=UMB.sports[si].discs[di];if(+d.n===UMB_DEF[old])d.n=String(UMB_DEF[d.part])}
+  else if(k==="part"){/* the number of entries and the stages are never filled in for you */}
   const b=$("#umbBody");if(b)b.innerHTML=umbBody();const ns=document.querySelector("form[data-f=umb] [name=ns]");if(ns)ns.value=UMB.sports.length});
 // ==============================================================================================
 
 window.addEventListener("resize",()=>{const hd=$("header");if(hd)document.documentElement.style.setProperty("--hh",hd.offsetHeight+"px")});
 document.addEventListener("input",e=>{const fm=e.target.closest&&e.target.closest("form[data-fmtform]");
-  if(fm){const fd=new FormData(fm);
-    fm.querySelectorAll(".fmtblk").forEach(b=>{const c=fmtCfg(fd,b.dataset.px);b.querySelectorAll(".grpf").forEach(x=>x.style.display=c.format==="rrko"?"":"none");
-      const pv=b.querySelector(".fmtprev");if(pv)pv.innerHTML=c.players?fmtPrev(c):`<p class="m" style="margin:10px 0">Enter the number of ${c.unit==="pairs"?"players":c.unit} to see how many progress from each round.</p>`});
+  if(fm){
+    if(e.target.matches&&e.target.matches("[data-stgt]")){const bb=e.target.closest(".fmtblk");if(bb)stgRender(bb)}
+    const fd=new FormData(fm);
+    fm.querySelectorAll(".fmtblk").forEach(b=>stgPreview(b,fd));
     const k=fd.get("kind");if(k)fm.querySelectorAll("[data-k]").forEach(x=>x.style.display=x.dataset.k.split(" ").includes(k)?"":"none");return}
   if(e.target.dataset.filt!=="mem")return;const q=e.target.value.trim().toLowerCase();
   document.querySelectorAll("[data-mem-row]").forEach(r=>r.style.display=r.dataset.memRow.includes(q)?"":"none")});
