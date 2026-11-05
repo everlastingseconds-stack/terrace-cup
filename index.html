@@ -1413,21 +1413,21 @@ V.score=async()=>{
   if(!S.ed)return `<h2>Scoring</h2>${empty("No edition yet","The organisers have not created one.")}`;
   await scLoad();
   if(SC.err)return `<h2>Scoring</h2><div class="note">Scoring is not set up yet (${E(SC.err)}). Run scoring.sql in the Supabase SQL editor, then reload.</div>`;
-  const ev=await sb.from("events").select("id,name,kind,format_config").eq("edition_id",S.ed.id).order("id"),evs=ev.data||[];
+  const ev=await sb.from("events").select("id,name,kind,format_config,umbrella_name").eq("edition_id",S.ed.id).order("id"),evs=ev.data||[];
   if(!evs.length)return `<h2>Scoring</h2>${empty("No events yet","Events are created on the Event registration tab.")}`;
   if(!evs.some(e=>e.id===SC.pe))SC.pe=evs[0].id;
   const head=`<h2>Scoring, ${E(S.ed.name)}</h2><div class="card"><label>Event</label><select data-chg="scev">${evs.map(e=>`<option value="${e.id}" ${e.id===SC.pe?"selected":""}>${E(e.name)}</option>`).join("")}</select></div>`;
   const imp=(await SC.bridge.listImports()).find(x=>x.id===SC.pe);
   let se=SC.events.find(x=>x.source&&x.source.portalEventId===SC.pe);
-  const row=evs.find(e=>e.id===SC.pe),team=!!row&&row.kind==="team";
+  const row=evs.find(e=>e.id===SC.pe),oly=!!row&&olyRe.test(row.umbrella_name||row.name||""),team=!!row&&row.kind==="team"&&!(oly&&imp&&imp.draw);
   if(!se&&imp&&SC.canEdit&&(team||imp.draw)){se=scBuild(imp,team,row);SC.bridge.setEvents(p=>[...p,se])} // an admin opening a team event, or an event that has a draw, sets scoring up automatically
   if(!se&&!team&&imp&&imp.staged){SC.focus=null;return head+empty("Custom stage plan","This event uses a custom stage plan. Its draw is on the Draw tab. Scoring for custom stage plans is not set up yet; plain knockout and groups-then-knockout events score as before.")}
   if(!se){SC.focus=null;return head+(team||(imp&&imp.draw)?empty("Scoring has not started","An admin will set it up when this event begins."):empty("No draw yet for this event",SC.canEdit?"Generate it on the Draw tab and it will appear here automatically.":"The draw will appear here once it has been made."))}
   if(team&&SC.canEdit&&imp)se=scSyncTeams(se,imp)||se;
   SC.focus=se.id;SC.emit();
   const noTeams=team&&SC.canEdit&&!(se.teams||[]).some(t=>!t.placeholder);
-  const stale=!team&&SC.canEdit&&imp&&imp.draw&&imp.draw.created&&se.source&&se.source.drawCreated&&se.source.drawCreated!==imp.draw.created;
-  return head+(stale?`<div class="note">The draw was regenerated after scoring was set up. <button class="s d" data-act="screbuild">Rebuild from the new draw</button> This clears every score for this event.</div>`:"")+(noTeams?`<div class="note">No teams yet. They appear here by themselves once the auction has formed them. Meanwhile you can build a placeholder schedule on the Schedule tab and assign the teams later.</div>`:"")+`<div id="scSlot"></div>`;
+  const stale=!team&&SC.canEdit&&imp&&imp.draw&&imp.draw.created&&se.source&&((se.source.drawCreated&&se.source.drawCreated!==imp.draw.created)||(oly&&se.source.kind==="auction"));
+  return head+(stale?`<div class="note">A newer draw exists for this event than the one scoring was set up from. <button class="s d" data-act="screbuild">Rebuild from the draw</button> This clears every score for this event.</div>`:"")+(noTeams?`<div class="note">No teams yet. They appear here by themselves once the auction has formed them. Meanwhile you can build a placeholder schedule on the Schedule tab and assign the teams later.</div>`:"")+`<div id="scSlot"></div>`;
 };
 
 // ---------- Olympics medal tally (shown on the Scoring tab when "olympics" appears in an event or auction name) ----------
@@ -1462,7 +1462,7 @@ function olyHTML(d){
   if(d.err)return `<div class="card oly">${head}<div class="note">The medal tally is not set up yet (${E(d.err)}). Run medals.sql in the Supabase SQL editor, then reload.</div></div>`;
   const t=olyTally(d),adm=isAdm()&&live(),md=c=>`<span class="md ${c}"></span>`;
   const opts=`<option value="">No one</option>`+t.map(r=>`<option>${E(r.team)}</option>`).join("");
-  const form=adm?(t.length?`<details style="margin-top:12px"><summary>Award medals</summary><form data-f="medal"><p class="m">Pick the event, then the teams that finished on the podium. Leave a place empty to skip it.</p>
+  const form=adm?(t.length?`<details style="margin-top:12px"><summary>Award medals</summary><form data-f="medal"><p class="m">Pick the event, then the teams that finished on the podium. Leave a place empty to skip it. One team can take more than one place in the same event.</p>
     <label>Event or discipline</label><input name="label" list="olylbl" required placeholder="e.g. 4 × 100 m relay"><datalist id="olylbl">${d.evs.map(e=>`<option value="${E(e.name)}">`).join("")}</datalist>
     <div class="g2"><div><label>${md("g")}Gold, ${OLY.G} points</label><select name="gold">${opts}</select></div>
     <div><label>${md("s")}Silver, ${OLY.S} points</label><select name="silver">${opts}</select></div>
@@ -1614,11 +1614,12 @@ const F={
     const label=fd.get("label").trim();if(!label)return toast("Enter the event or discipline.");
     const picks=[["gold",fd.get("gold")],["silver",fd.get("silver")],["bronze",fd.get("bronze")]].filter(p=>p[1]);
     if(!picks.length)return toast("Pick at least one team.");
-    if(new Set(picks.map(p=>p[1])).size<picks.length)return toast("A team can only take one place in the same event.");
     const have=((OLY.d&&OLY.d.awards)||[]).filter(a=>String(a.label).toLowerCase()===label.toLowerCase());
     const dup=picks.filter(p=>have.some(a=>a.medal===p[0])).map(p=>p[0]);
     if(dup.length&&!confirm(`${label} already has a ${dup.join(" and ")} medal. Add another (for example after a tie)?`))return;
-    if(chk(await sb.from("medal_awards").insert(picks.map(p=>({edition_id:S.ed.id,team:p[1],medal:p[0],label,created_by:S.user.id})))))render();
+    const mr=await sb.from("medal_awards").insert(picks.map(p=>({edition_id:S.ed.id,team:p[1],medal:p[0],label,created_by:S.user.id})));
+    if(mr.error){toast(mr.error.code==="23505"?"The medal table still has a rule that stops one team taking several medals in an event. Run section 8 of terrace-cup-changes.sql in Supabase, then try again.":mr.error.message);return}
+    render();
   },
   async regunit(fd){
     const ids=fd.getAll("events").map(Number).filter(Boolean);if(!ids.length)return toast("Pick at least one discipline.");
@@ -1983,8 +1984,10 @@ const slotH=s=>s.bye?`<span class="m">BYE</span>`:s.name?`${E(s.name)}${s.team?`
 
 // ---------- doubles pairing in the Draw tab: pots or no pots, chosen by hand or generated ----------
 const drKind=()=>((DR.evs||[]).find(e=>e.id===DR.ev)||{}).kind;
+const olyEv=e=>olyRe.test((e&&(e.umbrella_name||e.name))||"");   // Olympics events are the exception: their team sports can be drawn
+const drTeam=()=>drKind()==="team";
 const drDbl=()=>drKind()==="doubles";
-const drU=()=>drDbl()?{s:"Pair",p:"pairs"}:{s:"Player",p:"players"};
+const drU=()=>drDbl()?{s:"Pair",p:"pairs"}:drTeam()?{s:"Team",p:"teams"}:{s:"Player",p:"players"};
 const nk=p=>String((p&&p.name)||"").trim().toLowerCase();
 const drPg=s=>s.pairing||(s.pairing={pots:false,pool:[],pairs:[],confirmed:false});
 const drShuf=a=>{a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a};
@@ -2061,7 +2064,7 @@ Object.assign(F,{
 V.draw=async()=>{
   if(!S.ed)return `<p class="m">No edition yet.</p>`;
   const {data:evs0}=await sb.from("events").select("*").eq("edition_id",S.ed.id).order("id");
-  const evs=(evs0||[]).filter(e=>e.kind!=="team"),teamEvs=(evs0||[]).filter(e=>e.kind==="team");
+  const evs=(evs0||[]).filter(e=>e.kind!=="team"||olyEv(e)),teamEvs=(evs0||[]).filter(e=>e.kind==="team"&&!olyEv(e));
   if(!evs.length)return `<h2>Draw</h2><div class="note">${teamEvs.length?"Team events do not need a draw. They go straight to the Scoring tab.":"Create an event first on the Event registration tab."}</div>`;
   if(!evs.some(e=>e.id===DR.ev))DR.ev=evs[0].id;
   const all=await sb.from("draws").select("event_id,state").in("event_id",evs.map(e=>e.id));
@@ -2069,18 +2072,20 @@ V.draw=async()=>{
   const r={data:(all.data||[]).find(x=>x.event_id===DR.ev)};
   const d=drNew();DR.st=Object.assign(d,r.data?.state||{});DR.st.cfg=Object.assign(drNew().cfg,DR.st.cfg||{});
   const s=DR.st,run=isAdm()&&live();
-  return `<h2>Draw</h2>${teamEvs.length?`<p class="m" style="margin:-4px 0 12px">Team events skip the draw and go straight to the Scoring tab: ${E(teamEvs.map(e=>e.name).join(", "))}.</p>`:""}${live()?"":`<div class="note">${E(S.ed.name)} is archived. The draw is read-only.</div>`}
+  return `<h2>Draw</h2>${teamEvs.length?`<p class="m" style="margin:-4px 0 12px">Team events skip the draw and go straight to the Scoring tab: ${E(teamEvs.map(e=>e.name).join(", "))}. Olympics team events can still be drawn.</p>`:""}${live()?"":`<div class="note">${E(S.ed.name)} is archived. The draw is read-only.</div>`}
   <div class="card"><label>Event</label><select data-chg="drev">${evs.map(e=>`<option value="${e.id}" ${e.id===DR.ev?"selected":""}>${E(e.name)}</option>`).join("")}</select></div>
   ${drDbl()?(run?drPairCard(s):drPairView(s)):""}${run?drSetup(s):""}<div id="drOut">${drBody(s,run)}</div>${drDownload()}`;
 };
 function drSetup(s){const fc=((DR.evs||[]).find(e=>e.id===DR.ev)||{}).format_config,c=s.cfg,opt=(v,l,cur)=>`<option value="${v}" ${cur===v?"selected":""}>${l}</option>`;
   return `<div class="card"><h3>Draw setup</h3><form data-f="drgen">
 <div class="g2">${fc?`<input type="hidden" name="format" value="${fc.format}"><input type="hidden" name="groups" value="${fc.groups||2}"><input type="hidden" name="advance" value="${fc.advance||1}">${fc.format==="staged"?`<input type="hidden" name="stages" value="${E(JSON.stringify(fc.stages||[]))}"><input type="hidden" name="punit" value="${fc.unit||"players"}">`:""}`:`<div><label>Tournament format</label><select name="format" data-chg="drfmt">${opt("ko","Knockout only",c.format)}${opt("rrko","Round robin and knockout",c.format)}</select></div>`}
-<div><label>Can teammates face each other in the first round?</label><select name="same">${opt("no","No, keep teammates apart",c.same)}${opt("yes","Yes, allowed",c.same)}</select></div>
+${drTeam()?`<input type="hidden" name="same" value="yes">`:`<div><label>Can teammates face each other in the first round?</label><select name="same">${opt("no","No, keep teammates apart",c.same)}${opt("yes","Yes, allowed",c.same)}</select></div>`}
 ${fc?"":`<div class="grpf" ${c.format==="rrko"?"":`style="display:none"`}><label>Number of groups (1 or more)</label><input name="groups" type="number" min="1" value="${c.groups}"></div>
 <div class="grpf" ${c.format==="rrko"?"":`style="display:none"`}><label>Players advancing from each group</label><input name="advance" type="number" min="1" value="${c.advance}"></div>`}</div>
 ${fc?`<p class="m" style="margin:10px 0 0">Format set for this event (${fmtN(fc)}). Change it on the Event registration tab.</p>${fmtPrev(fc)}`:""}
-${drDbl()?`<input type="hidden" name="input" value="${E(s.input)}">${s.pairing&&s.pairing.confirmed?`<p class="m" style="margin:10px 0 0">The draw will use the ${s.pairing.pairs.length} confirmed pairs.</p>`:`<p class="m" style="margin:10px 0 0">Confirm the pairs above before generating the draw.</p>`}`:`<label>Players, one per line: Name, Team (team is optional)</label>
+${drDbl()?`<input type="hidden" name="input" value="${E(s.input)}">${s.pairing&&s.pairing.confirmed?`<p class="m" style="margin:10px 0 0">The draw will use the ${s.pairing.pairs.length} confirmed pairs.</p>`:`<p class="m" style="margin:10px 0 0">Confirm the pairs above before generating the draw.</p>`}`:drTeam()?`<label>Teams, one per line</label>
+<textarea id="dr_in" name="input" rows="8" placeholder="Rooftop Challengers&#10;The Achievers">${E(s.input)}</textarea>
+<div style="margin-top:6px"><button type="button" class="s o" data-act="drimpteams">Add the teams from the auction</button></div>`:`<label>Players, one per line: Name, Team (team is optional)</label>
 <textarea id="dr_in" name="input" rows="8" placeholder="Rahul Sharma, Thunder XI&#10;Aman Singh, Royals">${E(s.input)}</textarea>
 <div style="margin-top:6px"><button type="button" class="s o" data-act="drimpreg">Add verified players of this event</button><button type="button" class="s o" data-act="drimpauc">Add players from this event’s auction teams</button></div>`}
 <button class="g" ${drDbl()&&!(s.pairing&&s.pairing.confirmed)?"disabled":""}>Generate draw</button> ${s.result?`<button type="button" class="d" data-act="drclear">Clear draw</button>`:""}</form></div>`}
@@ -2140,6 +2145,10 @@ Object.assign(A,{
     const {data}=await sb.from("participants").select("full_name").eq("event_id",DR.ev).eq("status","verified");
     dr(s=>{const have=new Set(drParse(cur).map(p=>p.name.toLowerCase())),add=(data||[]).map(r=>r.full_name).filter(n=>!have.has(n.toLowerCase()));
       s.input=(cur.trim()?cur.trim()+"\n":"")+add.join("\n");toast(`Added ${add.length} verified player(s)`)})},
+  async drimpteams(){const cur=$("#dr_in").value,data=((await auFor([DR.ev])).data||[])[0],ts=(data&&data.state&&data.state.teams)||[];
+    if(!ts.length)return toast("No auction teams found. Create the teams on the Auction tab first.");
+    dr(s=>{const have=new Set(drParse(cur).map(p=>p.name.toLowerCase())),add=ts.map(t=>String(t.name||"").trim()).filter(n=>n&&!have.has(n.toLowerCase()));
+      s.input=(cur.trim()?cur.trim()+"\n":"")+add.join("\n");toast(`Added ${add.length} team(s)`)})},
   async drimpauc(){const cur=$("#dr_in").value;
     const data=((await auFor([DR.ev])).data||[])[0],ts=data?.state?.teams||[];
     if(!ts.length)return toast("No auction teams found for this event.");
