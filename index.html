@@ -2643,7 +2643,7 @@ function wbPaint(){
   let o=$("#wbm");const c=wbCfg();
   if(!S.user||!S.ed||!(c&&c.on)||!live()||(S.tab!=="auc"&&S.tab!=="draw")){if(o)o.remove();return}
   const adm=isAdm(),what=S.tab==="auc"?"auction":"draw",name=(S.tab==="auc"&&AU.st&&AU.st.tournName)||S.ed.name;
-  const h=`<div class="wbbox" role="region" aria-label="Welcome"><div class="wbk">Welcome to</div><h2 class="wbt">${E(name)}</h2>${c.text?`<p class="wbm">${E(c.text)}</p>`:""}<div class="wbw"><span class="wbd"></span>${adm?`Everyone sees this until you close it`:`Waiting for the ${what} to begin`}</div>${adm?`<button type="button" class="wbx" data-act="wbclose" aria-label="Close the banner for everyone" title="Close for everyone">✕</button>`:""}</div>`;
+  const h=`<div class="wbbox" role="region" aria-label="Welcome"><div class="wbk">Welcome to</div><h2 class="wbt">${E(name)}</h2>${c.text?`<p class="wbm">${E(c.text)}</p>`:""}<div class="wbw"><span class="wbd"></span>${adm?`Stay tuned`:`Waiting for the ${what} to begin`}</div>${adm?`<button type="button" class="wbx" data-act="wbclose" aria-label="Close the banner for everyone" title="Close for everyone">✕</button>`:""}</div>`;
   if(!o){o=document.createElement("div");o.id="wbm";document.body.appendChild(o)}
   if(o.dataset.k!==h){o.innerHTML=h;o.dataset.k=h}
 }
