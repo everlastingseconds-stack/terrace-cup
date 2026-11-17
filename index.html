@@ -47,7 +47,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:9px 8px;
 .ph{height:170px;width:100%;object-fit:cover;border-radius:8px;border:1px solid var(--gold)}
 #toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--gold);color:#000;padding:10px 18px;border-radius:6px;font-weight:600;display:none;z-index:9}
 .av{border-radius:50%;object-fit:cover;background:#1a1a1a;border:2px solid var(--gold);flex:none}
-.chk{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+.ckgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
 .ck{display:flex;align-items:center;gap:8px;margin:0;padding:8px 10px;background:#0a0a0a;border:1px solid var(--line);border-radius:6px;color:var(--text);font-size:15px;cursor:pointer}
 .ck input{width:auto;accent-color:var(--red)}
 .sub{display:flex;gap:6px;margin:4px 0 16px;flex-wrap:wrap}.sub button{margin:0;background:none;border:1px solid var(--line);color:var(--text)}.sub button.on{background:var(--gold);border-color:var(--gold);color:#000}
@@ -251,9 +251,9 @@ main.anim .grid>:nth-child(5){animation-delay:.24s}main.anim .grid>:nth-child(6)
 .stg{border:1px solid var(--line);border-left:3px solid var(--gold);padding:10px 12px;margin:8px 0;background:rgba(255,255,255,.02)}
 .stgh{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.stgh b{color:var(--gold2);min-width:62px}.stgh select{flex:1;min-width:180px;margin:0}
 .stghint{font-size:13px;margin:8px 0 0}
-.cd{display:inline-block;min-width:1.7em;text-align:center;background:var(--red);color:#fff;border-radius:4px;padding:0 8px;font:700 16px/1.25 "Barlow Condensed",sans-serif;animation:cdpop 1s ease-out}
+.drcd{display:inline-block;min-width:1.7em;text-align:center;background:var(--red);color:#fff;border-radius:4px;padding:0 8px;font:700 16px/1.25 "Barlow Condensed",sans-serif;animation:cdpop 1s ease-out}
 @keyframes cdpop{0%{transform:scale(1.7);opacity:.2}30%{transform:scale(1);opacity:1}100%{transform:scale(.95);opacity:.9}}
-@media(prefers-reduced-motion:reduce){.cd{animation:none}}
+@media(prefers-reduced-motion:reduce){.drcd{animation:none}}
 /* team crests */
 .stampr{display:flex;align-items:center;justify-content:center;gap:clamp(18px,4vw,54px);flex-wrap:wrap}
 .crest{position:relative;width:clamp(110px,17vw,220px);aspect-ratio:1;box-sizing:border-box;border-radius:50%;background:#fff;border:4px solid var(--gold);box-shadow:0 0 44px rgba(217,165,33,.5);animation:crestin .6s .2s cubic-bezier(.2,1.4,.4,1) both}
@@ -1263,7 +1263,7 @@ V.reg=async()=>{
 <div><label>Email ID</label><input name="email" type="email" required value="${E(p.email||S.user.email)}"></div>
 <div><label>Phone number</label><input name="phone" type="tel" required pattern="[0-9+ \\-]{10,15}" title="10 to 15 digits" value="${E(p.phone)}"></div></div>
 <label>Sports you are interested in</label>
-<div class="chk">${SPORTS.map(s=>`<label class="ck"><input type="checkbox" name="sports" value="${s}" ${mine.includes(s)?"checked":""}> ${s}</label>`).join("")}</div>
+<div class="ckgrid">${SPORTS.map(s=>`<label class="ck"><input type="checkbox" name="sports" value="${s}" ${mine.includes(s)?"checked":""}> ${s}</label>`).join("")}</div>
 <label>Other sports you would like us to add (optional)</label>
 <textarea name="other_sports" rows="2" placeholder="e.g. Volleyball, Carrom doubles">${E(p.other_sports)}</textarea>
 <button>${first?"Complete registration":"Save changes"}</button></form>`;
@@ -2251,7 +2251,7 @@ ${drDbl()?`<input type="hidden" name="input" value="${E(s.input)}">${s.pairing&&
 <div style="margin-top:6px"><button type="button" class="s o" data-act="drimpreg">Add verified players of this event</button><button type="button" class="s o" data-act="drimpauc">Add players from this event’s auction teams</button></div>`}
 ${drPotsBlock(s)}<button class="g" ${drDbl()&&!(s.pairing&&s.pairing.confirmed)?"disabled":""}>Generate draw</button> ${s.result?`<button type="button" class="d" data-act="drclear">Clear draw</button>`:""}</form></div>`}
 const pk=s=>(s.name||"")+"|"+(s.team||"");
-const slotM=(s,rv)=>{if(rv&&s.name&&!rv.shown.has(pk(s))){if(rv.cd&&rv.next&&!rv.used&&pk(s)===pk(rv.next)){rv.used=!0;return `<span class="cd">${rv.cd}</span>`}return `<span class="q">? ? ?</span>`}const h=slotH(s);return rv&&rv.last&&pk(s)===pk(rv.last)?`<span class="hl">${h}</span>`:h};
+const slotM=(s,rv)=>{if(rv&&s.name&&!rv.shown.has(pk(s))){if(rv.cd&&rv.next&&!rv.used&&pk(s)===pk(rv.next)){rv.used=!0;return `<span class="drcd">${rv.cd}</span>`}return `<span class="q">? ? ?</span>`}const h=slotH(s);return rv&&rv.last&&pk(s)===pk(rv.last)?`<span class="hl">${h}</span>`:h};
 function drShow(r,rv){
   if(r.format==="staged")return drShowStaged(r,rv);
   const real=r.rounds.flat().filter(m=>!m.a.bye&&!m.b.bye).length,gm=(r.groups||[]).reduce((a,g)=>a+g.fixtures.flat().length,0);
@@ -2396,7 +2396,7 @@ function drDownload(){
   const have=(DR.evs||[]).filter(e=>DR.all[e.id]);
   if(!have.length)return `<div class="card"><h3>Download as PDF</h3><p class="m">Available once a draw has been revealed.</p></div>`;
   return `<form class="card" data-f="drpdf"><h3>Download as PDF</h3><p class="m">Tick one or more events. They are combined into a single PDF.</p>
-<div class="chk">${have.map(e=>`<label class="ck"><input type="checkbox" name="ev" value="${e.id}" ${e.id===DR.ev?"checked":""}> ${E(e.name)}</label>`).join("")}</div>
+<div class="ckgrid">${have.map(e=>`<label class="ck"><input type="checkbox" name="ev" value="${e.id}" ${e.id===DR.ev?"checked":""}> ${E(e.name)}</label>`).join("")}</div>
 <button class="g">Download PDF</button> <button type="button" class="o" data-act="drall">Select all</button></form>`;
 }
 Object.assign(F,{
@@ -2643,7 +2643,7 @@ function wbPaint(){
   let o=$("#wbm");const c=wbCfg();
   if(!S.user||!S.ed||!(c&&c.on)||!live()||(S.tab!=="auc"&&S.tab!=="draw")){if(o)o.remove();return}
   const adm=isAdm(),what=S.tab==="auc"?"auction":"draw",name=(S.tab==="auc"&&AU.st&&AU.st.tournName)||S.ed.name;
-  const h=`<div class="wbbox" role="region" aria-label="Welcome"><div class="wbk">Welcome to</div><h2 class="wbt">${E(name)}</h2>${c.text?`<p class="wbm">${E(c.text)}</p>`:""}<div class="wbw"><span class="wbd"></span>${adm?`Stay tuned`:`Waiting for the ${what} to begin`}</div>${adm?`<button type="button" class="wbx" data-act="wbclose" aria-label="Close the banner for everyone" title="Close for everyone">✕</button>`:""}</div>`;
+  const h=`<div class="wbbox" role="region" aria-label="Welcome"><div class="wbk">Welcome to</div><h2 class="wbt">${E(name)}</h2>${c.text?`<p class="wbm">${E(c.text)}</p>`:""}<div class="wbw"><span class="wbd"></span>${adm?`Everyone sees this until you close it`:`Waiting for the ${what} to begin`}</div>${adm?`<button type="button" class="wbx" data-act="wbclose" aria-label="Close the banner for everyone" title="Close for everyone">✕</button>`:""}</div>`;
   if(!o){o=document.createElement("div");o.id="wbm";document.body.appendChild(o)}
   if(o.dataset.k!==h){o.innerHTML=h;o.dataset.k=h}
 }
