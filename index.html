@@ -1149,7 +1149,7 @@ function heroHTML(){
   return `<section class="hero${full?"":" sm"}"><div class="in">${tag}<h1>Terrace <b>Cup</b>${ed&&ed.year?`<span class="yr">${E(ed.year)}</span>`:""}</h1>
   ${on?hrowHTML():""}
   ${full&&on&&heroStart()&&!bnCur().length?`<div class="cd" id="cd"></div>`:""}
-  ${full&&ed?`<div class="cnt" id="cnt"><div><b data-cu="events">0</b><span>Events</span></div><div><b data-cu="players">0</b><span>Players</span></div><div><b data-cu="entries">0</b><span>Entries</span></div></div>`:""}</div></section>`;
+// ---  ${full&&ed?`<div class="cnt" id="cnt"><div><b data-cu="events">0</b><span>Events</span></div><div><b data-cu="players">0</b><span>Players</span></div><div><b data-cu="entries">0</b><span>Entries</span></div></div>`:""}</div></section>`;
 }
 function heroTick(){
   const el=$("#cd"),s0=heroStart();if(!el||!s0){clearInterval(HERO.t);return}
