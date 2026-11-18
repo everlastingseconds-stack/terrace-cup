@@ -304,6 +304,21 @@ main.anim .grid>:nth-child(5){animation-delay:.24s}main.anim .grid>:nth-child(6)
 .wbd{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--red);margin-right:8px;animation:wbp 1.4s ease-in-out infinite}
 @keyframes wbp{50%{opacity:.25}}
 .wbbox button.wbx{position:absolute;top:8px;right:8px;margin:0;padding:0;width:34px;height:34px;border-radius:50%;font-size:16px;line-height:1;background:#000;color:var(--gold2);border:1px solid var(--gold)}
+
+/* ===== custom stage plans in scoring ===== */
+.sgov{cursor:pointer;border-bottom:1px dashed var(--gold)}.sgov:hover{color:var(--gold2)}.sgch{font-size:11px;margin-left:6px}.sgch .sgov{color:var(--muted)}
+#sgm{position:fixed;inset:0;z-index:70;display:flex;align-items:center;justify-content:center;padding:14px}
+#sgm .bd{position:absolute;inset:0;background:rgba(0,0,0,.82)}
+#sgm .sdbox{position:relative;background:var(--panel);border:1px solid var(--gold);border-left:3px solid var(--red);border-radius:8px;padding:16px;width:min(480px,100%);max-height:90vh;overflow:auto}
+#sgm h3{margin:0 0 4px;color:var(--gold2)}
+.hrow{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}
+.hrow .hc{flex:1 1 440px;max-width:640px;min-width:0}
+.hp{flex:1 1 270px;max-width:340px;min-width:0;margin-top:12px;display:flex;flex-direction:column;gap:8px;max-height:260px;overflow-y:auto;scrollbar-width:thin}
+.hp .hc-s{flex:0 0 auto;border:1px solid var(--line);border-left:3px solid var(--acc,var(--gold));background:rgba(0,0,0,.58)}
+.bprev{background:radial-gradient(ellipse at 85% 40%,rgba(209,18,47,.3),transparent 60%),linear-gradient(180deg,#14040a,#000);border:1px solid var(--line);padding:14px}
+.bprev .hp{margin-top:0;max-height:none;overflow:visible;max-width:none;display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,340px));align-items:start}
+.pick.bp .chk{align-items:baseline}
+@media(max-width:700px){.hp{flex-basis:100%;max-width:none;max-height:none}}
 </style>
 </head>
 <body>
@@ -1030,7 +1045,7 @@ const fmtExtras=v=>{const l=fmtLine(v.format_config);
 const unitKey=v=>v.umbrella_key||v.group_key||("e"+v.id);
 const unitFee=items=>{const u=items.find(x=>x.umbrella_fee!=null);return u?+u.umbrella_fee:Math.max(0,...items.map(x=>+x.fee||0))};
 // ---------- event banner: live and upcoming events in a carousel ----------
-const BN={c:{},i:0,t:0,p:0,hold:false,sig:""};
+const BN={c:{},pc:{},i:0,t:0,p:0,hold:false,sig:"",psig:""};
 const IST="Asia/Kolkata";
 const bnWhen=ts=>new Date(ts).toLocaleString("en-IN",{timeZone:IST,weekday:"short",day:"numeric",month:"short",hour:"numeric",minute:"2-digit",hour12:true});
 const bnLocal=ts=>ts?new Date(ts).toLocaleString("sv-SE",{timeZone:IST}).replace(" ","T").slice(0,16):"";
@@ -1052,6 +1067,46 @@ function bnSlide(it){const sp=it.umb?{c:"#d9a521",i:TROPHY[3]}:sportOf(it.sport)
   <div class="hc-nm">${E(it.name)}</div><div class="hc-meta">${E(bnWhen(it.s))}${it.venue?" · "+E(it.venue):""}</div>
   <div class="hc-cd" data-s="${it.s}" data-l="${it.live?1:0}">${bnCountdown(it.s,it.live)}</div>
   <span class="hc-go">${it.live?"Follow the scores →":"Event details →"}</span></div>`}
+// ---------- upcoming events posted by the organisers: shown to the right of the countdown, in the same card format ----------
+function bpUnits(rows){const g=new Map();
+  (rows||[]).forEach(e=>{const k=unitKey(e);let u=g.get(k);
+    if(!u){u={id:k,name:e.umbrella_name||e.group_name||e.name,umb:!!e.umbrella_key,sport:e.group_name||e.name,venue:e.venue||"",s:NaN,en:NaN,posted:false};g.set(k,u)}
+    if(e.on_banner)u.posted=true;if(!u.venue&&e.venue)u.venue=e.venue;
+    const st=Date.parse(e.starts_at);if(!isNaN(st)){const en=e.ends_at?Date.parse(e.ends_at):st+4*36e5;if(isNaN(u.s)||st<u.s)u.s=st;if(isNaN(u.en)||en>u.en)u.en=en}});
+  return [...g.values()]}
+const bpDone=u=>!isNaN(u.en)&&Date.now()>=u.en;
+function bpItems(rows){return bpUnits(rows).filter(u=>u.posted&&!bpDone(u)).sort((a,b)=>(isNaN(a.s)-isNaN(b.s))||(a.s-b.s))}
+const bpCur=()=>{const c=S.ed&&S.ed.is_active&&BN.pc[S.ed.id];return c?bpItems(c.d).filter(x=>!(!isNaN(x.s)&&Date.now()>=x.s)):[]}
+const bpSig=a=>a.map(x=>x.id+"|"+(isNaN(x.s)?"":x.s)+"|"+x.name+"|"+x.venue).join();
+function bpSlide(it){const sp=it.umb?{c:"#d9a521",i:TROPHY[3]}:sportOf(it.sport),has=!isNaN(it.s);
+  return `<div class="hc-s" style="--acc:${sp.c}" data-act="hcgo" data-id="${E(it.id)}"><div class="hc-top"><span class="hc-up">UPCOMING</span><span class="hc-ic">${sp.i}</span></div>
+  <div class="hc-nm">${E(it.name)}</div><div class="hc-meta">${has?E(bnWhen(it.s)):"Date to be announced"}${it.venue?" · "+E(it.venue):""}</div>
+  ${has?`<div class="hc-cd" data-s="${it.s}" data-l="0">${bnCountdown(it.s,false)}</div>`:""}</div>`}
+const bpHTML=()=>{const it=bpCur();return it.length?`<div class="hp" id="hp" aria-label="Upcoming events">${it.map(bpSlide).join("")}</div>`:""};
+function hrowHTML(){const c=bnHTML(),p=bpHTML();BN.sig=bnSig(bnCur());BN.psig=bpSig(bpCur());return c||p?`<div class="hrow">${c}${p}</div>`:""}
+async function bpLoad(){const ed=S.ed;if(!ed||!ed.is_active)return;
+  const c=BN.pc[ed.id];if(c&&Date.now()-c.at<60000)return;
+  const r=await sb.from("events").select("id,name,starts_at,ends_at,venue,umbrella_key,umbrella_name,group_key,group_name,on_banner").eq("edition_id",ed.id).eq("on_banner",true);
+  if(r.error)return; // the banner column is not in the database yet
+  BN.pc[ed.id]={at:Date.now(),d:r.data||[]}}
+// organiser tools, in the event creation section: choose what is posted, and see it as it will look
+const bpPreview=()=>{const it=bpItems(EV.list).filter(x=>isNaN(x.s)||Date.now()<x.s);
+  return it.length?it.map(bpSlide).join(""):`<p class="m" style="margin:0">Nothing posted yet. Tick an event above to announce it.</p>`};
+function bpCard(items){const us=bpUnits(items);
+  return `<h3 style="margin-top:24px">Upcoming events on the banner</h3><div class="card" id="bpcard"><p class="m">Tick the events you want to announce to the right of the countdown. They appear in the same format as the countdown. Give an event a schedule to show a live countdown; without one the card says the date will be announced.</p>
+  <div class="pick bp">${us.map(u=>`<label class="chk"><input type="checkbox" data-bp="${E(u.id)}" ${u.posted?"checked":""} ${bpDone(u)?"disabled":""}> <b>${E(u.name)}</b> <span class="m">${isNaN(u.s)?"no start time yet":E(bnWhen(u.s))}${bpDone(u)?" · finished":""}</span></label>`).join("")||`<p class="m">Add an event first.</p>`}</div>
+  <h4 style="margin:14px 0 6px">Preview of the banner's right side</h4><div class="bprev"><div class="hp" id="bpprev">${bpPreview()}</div></div></div>`}
+async function bpToggle(key,on){
+  if(!isAdm()||!live())return;
+  const rows=(EV.list||[]).filter(x=>unitKey(x)===key);if(!rows.length)return;
+  const col=rows[0].umbrella_key?"umbrella_key":rows[0].group_key?"group_key":"id",val=col==="id"?rows[0].id:key;
+  const r=await sb.from("events").update({on_banner:on}).eq(col,val);
+  if(r.error){toast(/on_banner/.test(r.error.message)?"Run section 9 of terrace-cup-changes.sql in Supabase first. It adds the banner column.":r.error.message);render();return}
+  rows.forEach(x=>x.on_banner=on);BN.pc={};await bpLoad();
+  const pv=$("#bpprev");if(pv)pv.innerHTML=bpPreview();
+  bnPaint();toast(on?"Posted on the banner":"Removed from the banner");
+}
+document.addEventListener("change",e=>{const t=e.target;if(t&&t.dataset&&t.dataset.bp!==undefined)bpToggle(t.dataset.bp,t.checked)});
 function bnHTML(){const it=bnCur();if(!it.length)return "";
   BN.i=Math.min(BN.i,it.length-1);BN.sig=bnSig(it);
   return `<div class="hc" id="hc" role="region" aria-roledescription="carousel" aria-label="Live and upcoming events"><div class="hc-vp"><div class="hc-tr" style="transform:translateX(-${BN.i*100}%)">${it.map(bnSlide).join("")}</div></div>
@@ -1060,13 +1115,13 @@ function bnGo(i){const n=bnCur().length;if(!n)return;BN.i=(i%n+n)%n;
   const tr=$("#hc .hc-tr");if(tr)tr.style.transform=`translateX(-${BN.i*100}%)`;
   document.querySelectorAll("#hc .hc-dots button").forEach((b,k)=>b.classList.toggle("on",k===BN.i))}
 function bnPaint(){const hero=$(".hero .in");if(!hero)return;
-  const h=bnHTML(),old=$("#hc");
+  const h=hrowHTML(),old=$(".hrow");
   if(!h){if(old)old.remove();return}
   if(old)old.outerHTML=h;else{const t=hero.querySelector("h1");if(t)t.insertAdjacentHTML("afterend",h)}
-  const cd=$("#cd");if(cd)cd.remove()} // the carousel takes over from the single tournament countdown
-function bnTick(){const els=document.querySelectorAll("#hc .hc-cd");if(!els.length)return;
+  if(bnCur().length){const cd=$("#cd");if(cd)cd.remove()}} // the carousel takes over from the single tournament countdown
+function bnTick(){const els=document.querySelectorAll("#hc .hc-cd, .hp .hc-cd");if(!els.length&&!BN.psig&&!BN.sig)return;
   els.forEach(el=>{el.innerHTML=bnCountdown(+el.dataset.s,el.dataset.l==="1")});
-  if(bnSig(bnCur())!==BN.sig)bnPaint()}
+  if(bnSig(bnCur())!==BN.sig||bpSig(bpCur())!==BN.psig)bnPaint()}
 async function bnLoad(){const ed=S.ed;if(!ed||!ed.is_active)return;
   const c=BN.c[ed.id];if(c&&Date.now()-c.at<60000)return;
   const r=await sb.from("events").select("id,name,starts_at,ends_at,venue,umbrella_key,umbrella_name,group_key,group_name").eq("edition_id",ed.id).not("starts_at","is",null).order("starts_at");
@@ -1074,8 +1129,8 @@ async function bnLoad(){const ed=S.ed;if(!ed||!ed.is_active)return;
   BN.c[ed.id]={at:Date.now(),d:r.data||[]}}
 async function bnInit(){
   if(!BN.t){BN.t=setInterval(bnTick,1000);BN.p=setInterval(()=>{if(!BN.hold&&!document.hidden&&!reduced()&&bnCur().length>1)bnGo(BN.i+1)},6000)}
-  await bnLoad();const want=bnSig(bnCur());
-  if(want!==($("#hc")?BN.sig:""))bnPaint()}
+  await bnLoad();await bpLoad();const want=bnSig(bnCur())+"#"+bpSig(bpCur());
+  if(want!==(($(".hrow")?BN.sig:"")+"#"+($(".hrow")?BN.psig:"")))bnPaint()}
 document.addEventListener("mouseover",e=>{if(e.target.closest&&e.target.closest("#hc"))BN.hold=true});
 document.addEventListener("mouseout",e=>{const r=e.relatedTarget;if(e.target.closest&&e.target.closest("#hc")&&!(r&&r.closest&&r.closest("#hc")))BN.hold=false});
 let bnX=null;
@@ -1092,7 +1147,7 @@ function heroHTML(){
   const ed=S.ed,full=S.tab==="ev"&&S.player,on=ed&&ed.is_active;
   const tag=ed?`<div class="tag">${on?`<span class="live"><i></i>LIVE</span>`:`<span>Archive</span>`}<span>${E(ed.name)}</span></div>`:"";
   return `<section class="hero${full?"":" sm"}"><div class="in">${tag}<h1>Terrace <b>Cup</b>${ed&&ed.year?`<span class="yr">${E(ed.year)}</span>`:""}</h1>
-  ${on?bnHTML():""}
+  ${on?hrowHTML():""}
   ${full&&on&&heroStart()&&!bnCur().length?`<div class="cd" id="cd"></div>`:""}
   ${full&&ed?`<div class="cnt" id="cnt"><div><b data-cu="events">0</b><span>Events</span></div><div><b data-cu="players">0</b><span>Players</span></div><div><b data-cu="entries">0</b><span>Entries</span></div></div>`:""}</div></section>`;
 }
@@ -1277,7 +1332,7 @@ async function delEvents(ids,label){
   for(const t of ["registrations","draws","auctions"]){const r=await sb.from(t).delete().in("event_id",ids);if(r.error)return toast(`Could not remove the ${t}: ${r.error.message}`)}
   await sb.from("expenses").update({event_id:null}).in("event_id",ids); // keep the costs, detach them from the deleted event
   const r=await sb.from("events").delete().in("id",ids);if(r.error)return toast(r.error.message);
-  BN.c={};HERO.c={};toast("Event deleted");render();
+  BN.c={};BN.pc={};HERO.c={};toast("Event deleted");render();
 }
 V.ev=async()=>{
   if(!S.ed) return `${empty("No edition yet","The organisers have not created one.")}`;
@@ -1334,6 +1389,7 @@ V.ev=async()=>{
     <div data-k="doubles both" style="display:none"><h4 style="margin:14px 0 4px">Doubles</h4>${fmtFields({unit:"pairs"},"d_")}</div>
     <div data-k="team" style="display:none"><h4 style="margin:14px 0 4px">Teams</h4><p class="m">Players register one by one and are placed into teams at the auction.</p>${fmtFields({unit:"teams"},"t_")}</div>
     <button class="g">Add event</button></form>`}`;
+    h+=bpCard(items);
     const pls=await sb.from("players").select("id,full_name,phone").order("full_name");
     h+=`<h3 style="margin-top:24px">Add a player to an event</h3><form class="card" data-f="addplayer"><p class="m">For people who are not registering on the portal. The entry is marked verified straight away.</p>
     <div class="g2"><div><label>Event and disciplines</label><div class="pick">${[...new Set(items.map(unitKey))].map(k=>{const rs=items.filter(x=>unitKey(x)===k);return rs.length>1||rs[0].umbrella_key?`<div class="m" style="margin-top:6px"><b>${E(rs[0].umbrella_name||rs[0].group_name||rs[0].name)}</b></div>`+rs.map(v=>`<label class="chk"><input type="checkbox" name="event_ids" value="${v.id}"> ${E(v.name)}</label>`).join(""):`<label class="chk"><input type="checkbox" name="event_ids" value="${rs[0].id}"> ${E(rs[0].name)}</label>`}).join("")}</div></div>
@@ -1386,7 +1442,7 @@ SC.bridge.listImports=async()=>{
     const draw=res&&res.revealed!==false&&(res.rounds||res.groups)?res:null;
     const teams=(((a.data||[]).find(x=>x.event_id===e.id)||{}).state?.teams||[]).filter(t=>t.captain||(t.squad||[]).length);
     const pg=((d.data||[]).find(x=>x.event_id===e.id)||{}).state?.pairing,pairs=e.kind==="doubles"?(pg&&pg.confirmed?(pg.pairs||[]).map(x=>`${x.a.name} / ${x.b.name}`):[]):null;
-    return {id:e.id,name:e.name,draw,staged:!!(res&&res.format==="staged"&&res.revealed!==false),
+    return {id:e.id,name:e.name,draw,staged:!!(res&&res.format==="staged"&&res.revealed!==false),sdraw:(res&&res.format==="staged"&&res.revealed!==false)?res:null,scfg:((((d.data||[]).find(x=>x.event_id===e.id)||{}).state||{}).cfg||{}).stages||null,
       auction:teams.map(t=>({name:t.name,captain:t.captain||"",squad:(t.squad||[]).map(s=>s.name)})),
       players:pairs?pairs:(p.data||[]).filter(x=>x.event_id===e.id).map(x=>x.full_name).filter(Boolean)};
   });
@@ -1440,8 +1496,9 @@ function scAttach(slot){
   if(SC.host.parentNode!==slot)slot.appendChild(SC.host);
 }
 function scBuild(imp,team,row){
-  let ev=CourtsideScoring.importEvent(team?{...imp,draw:null}:imp,team?"auction":"draw",CourtsideScoring.guessSport(imp.name),"1, 2");
-  ev.source.drawCreated=team?"":((imp.draw&&imp.draw.created)||"");
+  let ev=CourtsideScoring.importEvent(team?{...imp,draw:null}:(imp.draw?imp:{...imp,draw:{players:(imp.sdraw&&imp.sdraw.players)||[]}}),team?"auction":"draw",CourtsideScoring.guessSport(imp.name),"1, 2");
+  ev.source.drawCreated=team?"":(((imp.draw||imp.sdraw)&&(imp.draw||imp.sdraw).created)||"");
+  if(!team&&!imp.draw&&imp.sdraw){ev.drawView={format:"staged",created:imp.sdraw.created||""};ev.stg=sgBuild(ev,imp.sdraw,imp.scfg);ev=sgFix(ev).se}
   if(!team&&imp.draw){const pm=new Map();(imp.draw.players||[]).forEach(p=>{if(p.pot)pm.set(String(p.name||"").trim().toLowerCase()+"|"+String(p.team||"").trim().toLowerCase(),p.pot)});
     ev.players.forEach(pl=>{const k=String(pl.name||"").trim().toLowerCase()+"|"+String(pl.club||"").trim().toLowerCase();if(pm.has(k))pl.pot=pm.get(k)})}
   if(!team&&imp.draw){const v=sdSnap(imp.draw);ev.drawView=v;if(v.format==="rrko")ev.knockout=sdMkKO(v);if(ev.knockout)ev=sdFix(ev).se}
@@ -1466,22 +1523,22 @@ V.score=async()=>{
   const head=`<h2>Scoring, ${E(S.ed.name)}</h2><div class="card"><label>Event</label><select data-chg="scev">${evs.map(e=>`<option value="${e.id}" ${e.id===SC.pe?"selected":""}>${E(e.name)}</option>`).join("")}</select></div>`;
   const all=await SC.bridge.listImports(),imp=all.find(x=>x.id===SC.pe);
   if(SC.canEdit){ // every event whose draw has been revealed is brought in by itself, not only the one on screen
-    const add=all.filter(x=>{const r=evs.find(e=>e.id===x.id);return r&&x.draw&&!SC.events.some(s=>s.source&&s.source.portalEventId===x.id)&&(r.kind!=="team"||olyRe.test(r.umbrella_name||r.name||""))}).map(x=>scBuild(x,false,evs.find(e=>e.id===x.id)));
+    const add=all.filter(x=>{const r=evs.find(e=>e.id===x.id);return r&&(x.draw||x.sdraw)&&!SC.events.some(s=>s.source&&s.source.portalEventId===x.id)&&(r.kind!=="team"||olyRe.test(r.umbrella_name||r.name||""))}).map(x=>scBuild(x,false,evs.find(e=>e.id===x.id)));
     if(add.length)SC.bridge.setEvents(p=>[...p,...add])}
   let se=SC.events.find(x=>x.source&&x.source.portalEventId===SC.pe),draft=false;
-  const row=evs.find(e=>e.id===SC.pe),oly=!!row&&olyRe.test(row.umbrella_name||row.name||""),team=!!row&&row.kind==="team"&&!(oly&&imp&&imp.draw);
-  if(!se&&imp&&SC.canEdit&&(team||imp.draw)){se=scBuild(imp,team,row);SC.bridge.setEvents(p=>[...p,se])} // an admin opening a team event, or an event that has a draw, sets scoring up automatically
-  if(!se&&!team&&imp&&imp.draw&&!SC.canEdit){se=scBuild(imp,false,row);draft=true} // viewers see the draw in the scoring format even before an admin opens scoring
+  const row=evs.find(e=>e.id===SC.pe),oly=!!row&&olyRe.test(row.umbrella_name||row.name||""),team=!!row&&row.kind==="team"&&!(oly&&imp&&(imp.draw||imp.sdraw));
+  if(!se&&imp&&SC.canEdit&&(team||imp.draw||imp.sdraw)){se=scBuild(imp,team,row);SC.bridge.setEvents(p=>[...p,se])} // an admin opening a team event, or an event that has a draw, sets scoring up automatically
+  if(!se&&!team&&imp&&(imp.draw||imp.sdraw)&&!SC.canEdit){se=scBuild(imp,false,row);draft=true} // viewers see the draw in the scoring format even before an admin opens scoring
   if(!se&&!team&&imp&&imp.staged){SC.focus=null;return head+empty("Custom stage plan","This event uses a custom stage plan. Its draw is on the Draw tab. Scoring for custom stage plans is not set up yet; plain knockout and groups-then-knockout events score as before.")}
-  if(!se){SC.focus=null;return head+(team||(imp&&imp.draw)?empty("Scoring has not started","An admin will set it up when this event begins."):empty("No draw yet for this event",SC.canEdit?"Generate it on the Draw tab and it will appear here automatically.":"The draw will appear here once it has been made."))}
+  if(!se){SC.focus=null;return head+(team||(imp&&(imp.draw||imp.sdraw))?empty("Scoring has not started","An admin will set it up when this event begins."):empty("No draw yet for this event",SC.canEdit?"Generate it on the Draw tab and it will appear here automatically.":"The draw will appear here once it has been made."))}
   if(team&&SC.canEdit&&imp)se=scSyncTeams(se,imp)||se;
   if(draft)SC.focus=null;else{SC.focus=se.id;SC.emit()}
   let pend=0;
-  if(!draft&&SC.canEdit&&imp&&imp.draw&&!team){const r=sdEnsure(se,imp);pend=r.pend;if(r.se!==se){const o=se,nx=r.se;SC.bridge.setEvents(p=>p.map(x=>x.id===o.id?nx:x));se=nx}}
+  if(!draft&&SC.canEdit&&imp&&(imp.draw||imp.sdraw)&&!team){const r=sdEnsure(se,imp);pend=r.pend;if(r.se!==se){const o=se,nx=r.se;SC.bridge.setEvents(p=>p.map(x=>x.id===o.id?nx:x));se=nx}}
   const noTeams=team&&SC.canEdit&&!(se.teams||[]).some(t=>!t.placeholder);
-  const stale=!team&&SC.canEdit&&imp&&imp.draw&&imp.draw.created&&se.source&&((se.source.drawCreated&&se.source.drawCreated!==imp.draw.created)||(oly&&se.source.kind==="auction"));
+  const dd=imp&&(imp.draw||imp.sdraw),stale=!team&&SC.canEdit&&dd&&dd.created&&se.source&&((se.source.drawCreated&&se.source.drawCreated!==dd.created)||(oly&&se.source.kind==="auction"));
   const ok=sdReady(se);
-  return head+(stale?`<div class="note">A newer draw exists for this event than the one scoring was set up from. <button class="s d" data-act="screbuild">Rebuild from the draw</button> This clears every score for this event.</div>`:"")+(noTeams?`<div class="note">No teams yet. They appear here by themselves once the auction has formed them. Meanwhile you can build a placeholder schedule on the Schedule tab and assign the teams later.</div>`:"")+(pend?`<div class="note">The group results have changed since the knockout bracket was last filled in. <button class="s d" data-act="sdsync">Update the bracket</button> This clears ${pend} knockout score${pend>1?"s":""} that no longer apply.</div>`:"")+(draft?`<div class="note">Scoring has not been opened for this event yet. Scores will appear in this draw as they are entered.</div>`:"")+(ok?`<div id="scDraw">${sdHTML(se)}</div>`:"")+(draft?"":ok?`<details class="card sdadv"><summary>Schedule, courts, leaderboard and settings</summary><div id="scSlot"></div></details>`:`<div id="scSlot"></div>`);
+  return head+(stale?`<div class="note">A newer draw exists for this event than the one scoring was set up from. <button class="s d" data-act="screbuild">Rebuild from the draw</button> This clears every score for this event.</div>`:"")+(noTeams?`<div class="note">No teams yet. They appear here by themselves once the auction has formed them. Meanwhile you can build a placeholder schedule on the Schedule tab and assign the teams later.</div>`:"")+(pend?`<div class="note">Results have changed since the later matches were last filled in. <button class="s d" data-act="sdsync">Update the bracket</button> This clears ${pend} score${pend>1?"s":""} that no longer apply.</div>`:"")+(draft?`<div class="note">Scoring has not been opened for this event yet. Scores will appear in this draw as they are entered.</div>`:"")+(ok?`<div id="scDraw">${sdHTML(se)}</div>`:"")+(draft?"":ok?`<details class="card sdadv"><summary>Schedule, courts, leaderboard and settings</summary><div id="scSlot"></div></details>`:`<div id="scSlot"></div>`);
 };
 
 // ---------- Olympics medal tally (shown on the Scoring tab when "olympics" appears in an event or auction name) ----------
@@ -1697,7 +1754,7 @@ const F={
     const id=+fd.get("id"),st=bnIso(fd.get("starts")),en=bnIso(fd.get("ends"));
     if(!st)return toast("Pick a start time.");
     if(en&&Date.parse(en)<=Date.parse(st))return toast("The end time must be after the start time.");
-    if(chk(await sb.from("events").update({starts_at:st,ends_at:en,venue:fd.get("venue").trim()||null}).eq("id",id))){BN.c={};toast("Schedule saved");render()}
+    if(chk(await sb.from("events").update({starts_at:st,ends_at:en,venue:fd.get("venue").trim()||null}).eq("id",id))){BN.c={};BN.pc={};toast("Schedule saved");render()}
   },
   async evfmt(fd){const c=fmtCfg(fd),p=fmtPlan(c);if(p.err)return toast(p.err);
     if(chk(await sb.from("events").update({capacity:fd.get("kind")==="team"?null:(c.cap||c.players),format_config:c}).eq("id",+fd.get("id"))))render()},
@@ -1720,7 +1777,7 @@ const A={
   async delmedal(id){if(!isAdm()||!live())return;if(!confirm("Remove this medal?"))return;if(chk(await sb.from("medal_awards").delete().eq("id",id)))render()},
   hcprev(){bnGo(BN.i-1)},hcnext(){bnGo(BN.i+1)},hcdot(i){bnGo(+i)},
   hcgo(id){const it=bnCur().find(x=>String(x.id)===String(id));if(it&&it.live){SC.pe=it.liveId||it.firstId;S.tab="score"}else S.tab="ev";S.anim=true;render();scrollTo({top:0,behavior:"smooth"})},
-  async evschedclear(id){if(chk(await sb.from("events").update({starts_at:null,ends_at:null,venue:null}).eq("id",+id))){BN.c={};render()}},
+  async evschedclear(id){if(chk(await sb.from("events").update({starts_at:null,ends_at:null,venue:null}).eq("id",+id))){BN.c={};BN.pc={};render()}},
   async out(){await scReset();await sb.auth.signOut();S.user=null;S.mode="in";S.msg="";render()},
   google(){sb.auth.signInWithOAuth({provider:"google",options:{redirectTo:location.origin+location.pathname}})},
   async verified(id){if(chk(await sb.from("registrations").update({status:"verified"}).eq("id",id))){HERO.c={};render()}},
@@ -1968,7 +2025,7 @@ function drStagePairs(players,b,avoid){let best=null;
   return{matches:shuf(ms),bad:best.bad}}
 // What a finished stage sends on, in order: winners of M1.., then best losers 1.. (or table positions for a round robin or groups).
 function drSend(s){
-  if(s.t==="ko"){const n=s.matches.length,bl=Math.max(0,s.out-n);
+  if(s.t==="ko"){const b=+s.b||0,n=s.matches?s.matches.length:(s.in-b)/2+b,bl=Math.max(0,s.out-n);
     return{n,bl,labels:[...Array.from({length:n},(_,k)=>`Winner of Stage ${s.n} M${k+1}`),...Array.from({length:bl},(_,k)=>`Best loser ${k+1} of Stage ${s.n}`)]}}
   if(s.t==="rr")return{labels:Array.from({length:s.out},(_,k)=>`Table position ${k+1} of Stage ${s.n}`)};
   const G=s.groups?s.groups.length:(s.g||0),q=s.q||Math.round(s.out/(G||1)),names=s.groups?s.groups.map(g=>g.name):Array.from({length:G},(_,i)=>"Group "+String.fromCharCode(65+i));
@@ -1977,7 +2034,7 @@ function drMakeStaged(players,cfg){
   const avoid=cfg.same!=="yes",warn=[],st=cfg.stages||[],res={format:"staged",same:cfg.same,players,created:new Date().toISOString(),stages:[]};
   const names=players.map(p=>p.name.toLowerCase());if(new Set(names).size<names.length)warn.push("Some names appear more than once. Check the player list.");
   const pl=stgPlan({players:players.length,unit:cfg.unit||"players",stages:st});
-  pl.steps.forEach((x,i)=>res.stages.push({n:i+1,t:st[i].t,name:x.name,in:x.in,out:x.out,note:x.note||"",from:x.from||"",final:!!x.final,g:st[i].g,q:st[i].q}));
+  pl.steps.forEach((x,i)=>res.stages.push({n:i+1,t:st[i].t,name:x.name,in:x.in,out:x.out,note:x.note||"",from:x.from||"",final:!!x.final,g:st[i].g,q:st[i].q,b:+st[i].b||0}));
   const s1=st[0],r1=res.stages[0];
   if(s1.t==="ko"){const o=drStagePairs(players,+s1.b||0,avoid);r1.matches=o.matches;if(o.bad)warn.push(`${o.bad} first-round match(es) pair teammates. This could not be avoided with these teams.`)}
   else if(s1.t==="rr"){const g=shuf(players);r1.groups=[{name:"Group A",players:g,fixtures:drRR(g)}];warn.push("Everyone plays everyone in this stage, so teammates will meet.")}
@@ -2440,7 +2497,7 @@ const sdTeam=(se,id)=>(se.teams||[]).find(t=>t.id===id);
 const sdPlain=(se,id)=>{const t=sdTeam(se,id);return t?t.name:"—"};
 const sdNm=(se,id)=>{const t=sdTeam(se,id);if(!t)return `<span class="m">—</span>`;const p=(se.players||[]).find(x=>x.id===(t.playerIds||[])[0]),c=p&&p.club,pt=p&&p.pot;return E(t.name)+(c?`<span class="tm">${E(c)}</span>`:"")+(pt?`<span class="pt">${E(pt)}</span>`:"")};
 const sdFmt=se=>{if(!se||!se.source||se.source.kind!=="draw")return null;if(se.drawView&&se.drawView.format)return se.drawView.format;return se.knockout&&!(se.groups||[]).length?"ko":null};
-const sdReady=se=>{const f=sdFmt(se);if(!f||!se.knockout||!se.knockout.rounds)return false;return f==="ko"||(!!se.drawView&&!!se.drawView.fx&&(se.groups||[]).length>0)};
+const sdReady=se=>{const f=sdFmt(se);if(f==="staged")return !!(se.stg&&se.stg.stages&&se.stg.stages.length);if(!f||!se.knockout||!se.knockout.rounds)return false;return f==="ko"||(!!se.drawView&&!!se.drawView.fx&&(se.groups||[]).length>0)};
 const sdFind=(se,g,a,b)=>(se.schedule||[]).find(m=>m.groupId===g.id&&((m.teamAId===a&&m.teamBId===b)||(m.teamAId===b&&m.teamBId===a)));
 const sdSwap=gs=>(gs||[]).map(x=>({...x,a:x.b,b:x.a}));
 const sdGames=(m,ia)=>m?(m.teamAId===ia?(m.games||[]):sdSwap(m.games)):[];
@@ -2500,6 +2557,7 @@ const sdFix=se=>{const c=sdCalc(se,true);return {se:{...se,knockout:{...se.knock
 // Called when an admin opens the tab: fills in the draw view for events set up before this existed, and keeps
 // the bracket in step with the group tables. Returns the (possibly new) event and, if a sync would wipe scores, how many.
 function sdEnsure(se,imp){
+  if(se&&sdFmt(se)==="staged"){const f=sgFix(se);if(JSON.stringify(f.se.stg)!==JSON.stringify(se.stg)){if(!f.cleared)return {se:f.se,pend:0};return {se,pend:f.cleared}}return {se,pend:0}}
   if(!se||!se.source||se.source.kind!=="draw"||!imp||!imp.draw)return {se,pend:0};
   let n=se;const d=imp.draw,rr=!!(d.groups&&d.groups.length);
   if(!n.drawView){
@@ -2540,6 +2598,7 @@ function sdStand(se,gi){
   return `<div class="m" style="margin-top:10px">Standings</div><div class="wrap"><table class="sdst"><thead><tr><th>#</th><th></th><th>P</th><th>W</th>${dr?"<th>D</th>":""}<th>L</th><th>Pts</th>${pd?"<th>PD</th>":""}</tr></thead><tbody>${st.rows.map((r,k)=>`<tr class="${k<adv?"sdq":""}"><td>${k+1}</td><td>${E(sdPlain(se,r.teamId))}</td><td>${r.played}</td><td>${r.wins}</td>${dr?`<td>${r.draws}</td>`:""}<td>${r.losses}</td><td>${r.leaguePoints}</td>${pd?`<td>${r.pointDiff>0?"+":""}${r.pointDiff}</td>`:""}</tr>`).join("")}</tbody></table></div>`;
 }
 function sdHTML(se){
+  if(sdFmt(se)==="staged")return sgHTML(se);
   const f=sdFmt(se),adm=!!SC.canEdit,v=se.drawView||{},R=sdCalc(se,false).model,n=(se.teams||[]).filter(t=>!t.placeholder).length;
   const gTot=(v.fx||[]).reduce((a,g)=>a+g.flat().length,0),gDone=f==="rrko"?(se.groups||[]).reduce((a,_,gi)=>a+sdGroupState(se,gi).done,0):0;
   const kTot=R.flat().filter(x=>!x.bye).length,kDone=R.flat().filter(x=>x.st==="done").length;
@@ -2562,12 +2621,15 @@ SC.subs.add(sdPaintView); // a score entered on another device shows up here by 
 // ----- the score editor -----
 function sdTarget(se,id){
   const p=String(id).split(":");
+  if(p[0]==="s"){const st=se.stg&&se.stg.stages[+p[1]],m=st&&st.matches&&st.matches[+p[2]];return m?{kind:"s",si:+p[1],mi:+p[2],m}:null}
+  if(p[0]==="x"){const st=se.stg&&se.stg.stages[+p[1]],g=st&&st.groups&&st.groups[+p[2]],f=g&&g.fx[+p[3]];return f?{kind:"x",si:+p[1],gi:+p[2],fi:+p[3],g,f}:null}
   if(p[0]==="k"){const ri=+p[1],i=+p[2],m=se.knockout&&se.knockout.rounds[ri]&&se.knockout.rounds[ri][i];return m?{kind:"k",ri,i,m}:null}
   if(p[0]==="g"){const gi=+p[1],x=+p[2],y=+p[3],g=(se.groups||[])[gi];if(!g||g.teamIds[x]==null||g.teamIds[y]==null)return null;const ia=g.teamIds[x],ib=g.teamIds[y];return {kind:"g",gi,g,ia,ib,md:+p[4]||0,m:sdFind(se,g,ia,ib)||null}}
   return null;
 }
 function sdOpen(id){
   if(!SC.canEdit)return;const se=sdCur();if(!se)return;const tg=sdTarget(se,id);if(!tg)return;
+  if(tg.kind==="s"||tg.kind==="x")return sgOpenEd(id,se,tg);
   let nameA,nameB,title,games,shoot=null;const isKO=tg.kind==="k";
   if(isKO){const x=sdCalc(se,false).model[tg.ri][tg.i];if(x.bye||!x.A.id||!x.B.id)return;nameA=sdPlain(se,x.A.id);nameB=sdPlain(se,x.B.id);title=`M${tg.i+1} · ${rname(se.knockout.rounds[tg.ri].length)}`;games=tg.m.games||[];shoot=tg.m.shootoutWinner||null}
   else{nameA=sdPlain(se,tg.ia);nameB=sdPlain(se,tg.ib);title=`${tg.g.name} · Matchday ${tg.md+1}`;games=sdGames(tg.m,tg.ia)}
@@ -2601,14 +2663,15 @@ function sdCommit(clear){
   if(cfg.allowDraw)games=games.slice(0,1);
   const t=Ea(games,cfg),shoot=!clear&&s.isKO&&cfg.allowDraw&&t.done&&t.winner==="DRAW"?(s.shoot||null):null;
   let next;
-  if(tg.kind==="k")next={...se,knockout:{...se.knockout,rounds:se.knockout.rounds.map((rd,ri)=>ri===tg.ri?rd.map((m,i)=>i===tg.i?{...m,games,shootoutWinner:shoot}:m):rd)}};
+  if(tg.kind==="s"||tg.kind==="x")next=sgApplyGames(se,tg,games,shoot);
+  else if(tg.kind==="k")next={...se,knockout:{...se.knockout,rounds:se.knockout.rounds.map((rd,ri)=>ri===tg.ri?rd.map((m,i)=>i===tg.i?{...m,games,shootoutWinner:shoot}:m):rd)}};
   else{
     let sch=se.schedule||[];
     if(!tg.m)sch=[...sch,{id:CourtsideScoring.te("m"),round:tg.md+1,court:(se.cfg.courtNames||["1"])[0],groupId:tg.g.id,groupName:tg.g.name,teamAId:tg.ia,teamBId:tg.ib,games}];
     else{const gm=tg.m.teamAId===tg.ia?games:sdSwap(games);sch=sch.map(x=>x.id===tg.m.id?{...x,games:gm}:x)}
     next={...se,schedule:sch};
   }
-  const f=sdFix(next);
+  const f=sdFmt(next)==="staged"?sgFix(next):sdFix(next);
   if(f.cleared&&!confirm(`This changes who plays in a later match. ${f.cleared} knockout score${f.cleared>1?"s":""} entered for ${f.cleared>1?"those matches":"that match"} will be cleared. Continue?`))return;
   SD.ed=null;sdPaint();
   SC.bridge.setEvents(p=>p.map(x=>x.id===se.id?f.se:x));
@@ -2623,7 +2686,7 @@ Object.assign(A,{
   sdsave(){sdCommit(false)},
   sdclr(){if(confirm("Clear the score for this match?"))sdCommit(true)},
   sdsync(){
-    const se=sdCur();if(!se||!SC.canEdit)return;const f=sdFix(se);
+    const se=sdCur();if(!se||!SC.canEdit)return;const f=sdFmt(se)==="staged"?sgFix(se):sdFix(se);
     if(f.cleared&&!confirm(`${f.cleared} knockout score${f.cleared>1?"s":""} no longer apply to the current group results and will be cleared. Continue?`))return;
     SC.bridge.setEvents(p=>p.map(x=>x.id===se.id?f.se:x));render();
   }
@@ -2662,6 +2725,196 @@ setInterval(async()=>{
     else if(S.tab==="draw"&&DR.ev&&DR.st){const r=await sb.from("draws").select("state").eq("event_id",DR.ev).maybeSingle(),w=r.data&&r.data.state&&r.data.state.welcome;if(S.tab==="draw"&&!same(w,DR.st.welcome)){DR.st.welcome=w;wbPaint()}}
   }catch(e){}
 },5000);
+
+
+// ---------- custom stage plans in the scoring view ----------
+// A staged draw is brought into scoring the same way as every other draw and shown in the Draw tab's own layout (stage by stage,
+// consecutive knockout rounds as one bracket). Each place in a later stage is a "slot" that knows where its name comes from:
+//   {k:"p"}  a drawn entrant            {k:"bye"}  a bye
+//   {k:"w"}  winner of a match          {k:"tp"}   a round-robin table position      {k:"gp"}  a group position
+//   {k:"bl"} best loser: never worked out by the portal, an admin picks the name.
+// Any slot that is not a drawn entrant or a bye can also be overridden by hand (slot.ov = team id), for tie-breaks and other exceptions.
+const sgTid=(se,p)=>{const k=String(p.name||"").trim().toLowerCase()+"|"+String(p.team||"").trim().toLowerCase(),pl=(se.players||[]).find(x=>String(x.name||"").trim().toLowerCase()+"|"+String(x.club||"").trim().toLowerCase()===k);return pl?"t_"+pl.id:null};
+// What a stage sends on, in the same order and with the same wording as the draw (drSend).
+function sgSources(si,st){
+  if(st.t==="ko"){const n=st.matches.length,bl=Math.max(0,(st.out||0)-n);
+    return [...Array.from({length:n},(_,k)=>({k:"w",s:si,m:k,l:`Winner of Stage ${st.n} M${k+1}`})),...Array.from({length:bl},(_,k)=>({k:"bl",s:si,i:k,l:`Best loser ${k+1} of Stage ${st.n}`}))]}
+  if(st.t==="rr")return Array.from({length:st.out||0},(_,k)=>({k:"tp",s:si,p:k+1,l:`Table position ${k+1} of Stage ${st.n}`}));
+  const G=st.groups.length,q=st.q||Math.round((st.out||0)/(G||1)),L=[];
+  for(let p=1;p<=q;p++)st.groups.forEach((g,gi)=>L.push({k:"gp",s:si,g:gi,p,l:`${g.name} #${p}`}));
+  return L}
+// Pairings for a knockout stage the draw left open: top seeds get the byes, then the highest seed plays the lowest, same-group clashes avoided.
+function sgGenKO(E,b){
+  const top=E.slice(0,b),rest=E.slice(b),pairs=[];
+  for(let i=0;i<Math.floor(rest.length/2);i++)pairs.push([rest[i],rest[rest.length-1-i]]);
+  const same=p=>p[0].k==="gp"&&p[1].k==="gp"&&p[0].s===p[1].s&&p[0].g===p[1].g;
+  for(let pass=0;pass<5;pass++)pairs.forEach((p,i)=>{if(!same(p))return;
+    for(let j=0;j<pairs.length&&same(p);j++){if(j===i)continue;const q=pairs[j];
+      for(const k of [0,1]){const x=p[1],y=q[k],np=[p[0],y],nq=q.slice();nq[k]=x;if(!same(np)&&!same(nq)){p[1]=y;q[k]=x;break}}}});
+  return [...pairs.map(p=>({a:p[0],b:p[1]})),...top.map(x=>({a:x,b:{k:"bye"}}))];
+}
+const sgFixtures=n=>{const fx=[];drRR(Array.from({length:n},(_,i)=>({i}))).forEach((rd,md)=>rd.forEach(m=>fx.push({id:CourtsideScoring.te("sx"),a:m[0].i,b:m[1].i,md,games:[]})));return fx};
+function sgBuild(se,res,cfgSt){
+  const te=CourtsideScoring.te,st=[];
+  (res.stages||[]).forEach((d,si)=>{
+    const cs=(cfgSt&&cfgSt[si])||{},S={n:d.n,t:d.t,name:d.name,in:d.in,out:d.out,note:d.note||"",from:d.from||"",final:!!d.final,g:d.g,q:d.q,b:d.b!=null?d.b:(+cs.b||0),rule:d.rule||""};
+    const prev=si?st[si-1]:null,srcs=prev?new Map(sgSources(si-1,prev).map(x=>[x.l,x])):null;
+    const slot=x=>!x||x.bye?{k:"bye"}:x.label?(srcs&&srcs.get(x.label)?{...srcs.get(x.label)}:{k:"bl",s:Math.max(0,si-1),i:0,l:x.label}):{k:"p",id:sgTid(se,x)};
+    if(d.matches)S.matches=d.matches.map(m=>({id:te("sm"),a:slot(m.a),b:slot(m.b),games:[],shootoutWinner:null}));
+    else if(d.groups)S.groups=d.groups.map(g=>{
+      const ix=new Map(g.players.map((p,i)=>[pk(p),i])),fx=[];
+      (g.fixtures||[]).forEach((rd,md)=>rd.forEach(m=>fx.push({id:te("sx"),a:ix.get(pk(m[0])),b:ix.get(pk(m[1])),md,games:[]})));
+      return {id:te("sg"),name:g.name,members:g.players.map(p=>srcs&&srcs.has(p.name)?{...srcs.get(p.name)}:p.label?slot({label:p.label}):{k:"p",id:sgTid(se,p)}),fx}});
+    else if(prev){ // the draw only says "pairings follow once the stage before has been played": set them up the usual way so they can be scored
+      const E=sgSources(si-1,prev);S.gen=true;
+      if(S.t==="ko"){const b=d.b!=null||cs.b!=null?S.b:(E.length%2);S.b=b;
+        S.matches=sgGenKO(E,b).map(m=>({id:te("sm"),a:m.a,b:m.b,games:[],shootoutWinner:null}));
+        S.rule=`Seeded in order: ${b?`the top ${b>1?b+" seeds get":"seed gets"} a bye, then `:""}the highest remaining seed plays the lowest, and players from the same group are kept apart where possible. Click any name to change who plays.`}
+      else if(S.t==="rr")S.groups=[{id:te("sg"),name:"Round robin",members:E,fx:sgFixtures(E.length)}];
+      else{const G=+d.g||2,gs=Array.from({length:G},()=>[]);E.forEach((x,i)=>{const row=Math.floor(i/G);let col=i%G;if(row%2)col=G-1-col;gs[col].push(x)});
+        S.groups=gs.map((m,i)=>({id:te("sg"),name:"Group "+String.fromCharCode(65+i),members:m,fx:sgFixtures(m.length)}));
+        S.rule="Qualifiers are placed in the groups in order, snaking from group to group so the top seeds are spread out. Click any name to change who plays."}}
+    st.push(S)});
+  return {created:res.created||"",stages:st};
+}
+// Works out every stage from the results so far. With mut=true it also records which teams each match was played between
+// and clears a match whose teams changed under an entered score.
+function sgCalc(se,mut){
+  const {Ea,Rf}=CourtsideScoring,cfg=se.cfg,stg=JSON.parse(JSON.stringify(se.stg)),M=[];let cleared=0;
+  const clr=o=>{o.games=[];delete o.goalEvents;if("shootoutWinner" in o)o.shootoutWinner=null};
+  const sm=S=>{
+    if(S.k==="bye")return {bye:true,id:null};
+    let id=null;
+    if(S.ov)id=S.ov;
+    else if(S.k==="p")id=S.id||null;
+    else{const sx=M[S.s];if(sx){
+      if(S.k==="w"){const x=sx.matches[S.m];id=x?x.win:null}
+      else if(S.k==="tp"){const g=sx.groups[0];id=g&&g.complete&&g.rows[S.p-1]?g.rows[S.p-1].teamId:null}
+      else if(S.k==="gp"){const g=sx.groups[S.g];id=g&&g.complete&&g.rows[S.p-1]?g.rows[S.p-1].teamId:null}}}
+    return {id:id||null,ph:S.l||"",src:S.k!=="p",manual:!!S.ov,k:S.k}};
+  stg.stages.forEach((st,si)=>{
+    M[si]={matches:[],groups:[]};
+    (st.matches||[]).forEach((m,mi)=>{
+      const A=sm(m.a),B=sm(m.b),bye=!!(A.bye||B.bye),keep=bye?(A.bye?B:A):null;
+      if(mut&&!bye){if(((m.ta||null)!==A.id||(m.tb||null)!==B.id)&&(m.games||[]).length){clr(m);cleared++}m.ta=A.id;m.tb=B.id}
+      let win=null,stt,t=null;
+      if(bye){win=keep.id;stt="bye"}
+      else if(A.id&&B.id){t=Ea(m.games||[],cfg);
+        if(t.done)win=t.winner==="DRAW"?(m.shootoutWinner==="A"?A.id:m.shootoutWinner==="B"?B.id:null):(t.winner==="A"?A.id:B.id);
+        stt=t.done?"done":((m.games||[]).some(sdAny)?"live":"pending")}
+      else stt="waiting";
+      M[si].matches[mi]={m,A,B,bye,win,st:stt,t}});
+    (st.groups||[]).forEach((g,gi)=>{
+      const mem=g.members.map(sm),ids=mem.map(x=>x.id),all=ids.every(Boolean)&&new Set(ids).size===ids.length;
+      const fx=g.fx.map(f=>{const A=mem[f.a],B=mem[f.b];
+        if(mut){if(((f.ta||null)!==A.id||(f.tb||null)!==B.id)&&(f.games||[]).length){clr(f);cleared++}f.ta=A.id;f.tb=B.id}
+        const ok=!!(A&&B&&A.id&&B.id),t=ok?Ea(f.games||[],cfg):null;
+        return {f,A,B,ok,t,st:ok?(t.done?"done":((f.games||[]).some(sdAny)?"live":"pending")):"waiting"}});
+      let rows=[],complete=false;
+      if(all){rows=Rf({id:"sg",teamIds:ids},{...se,schedule:fx.map(x=>({groupId:"sg",teamAId:x.A.id,teamBId:x.B.id,games:x.f.games||[]}))});complete=fx.every(x=>x.st==="done")}
+      const known=ids.filter(Boolean);
+      M[si].groups[gi]={mem,fx,rows,complete,dup:new Set(known).size<known.length,any:fx.some(x=>x.st==="done"||x.st==="live")}})});
+  return {stg,M,cleared};
+}
+const sgFix=se=>{const c=sgCalc(se,true);return {se:{...se,stg:c.stg},cleared:c.cleared}};
+// puts the score into the stored stage and remembers who the match is between, so a later change of teams can be spotted
+function sgApplyGames(se,tg,games,shoot){
+  const c=sgCalc(se,false),stg=JSON.parse(JSON.stringify(se.stg)),st=stg.stages[tg.si];
+  if(tg.kind==="s"){const m=st.matches[tg.mi],x=c.M[tg.si].matches[tg.mi];m.games=games;m.shootoutWinner=shoot;m.ta=x.A.id;m.tb=x.B.id}
+  else{const f=st.groups[tg.gi].fx[tg.fi],x=c.M[tg.si].groups[tg.gi].fx[tg.fi];f.games=games;f.ta=x.A.id;f.tb=x.B.id}
+  return {...se,stg};
+}
+
+// ----- drawing: the same markup as the Draw tab's staged view -----
+const sgSlotH=(se,S,oid,adm)=>{
+  if(S.bye)return `<span class="m">BYE</span>`;
+  const lnk=t=>`<span class="sgov" data-act="sgov" data-id="${oid}" title="Set who fills this place">${t}</span>`;
+  // a place that is not filled yet is the link itself; a filled place keeps its name for scoring and gets a small separate "change" link
+  if(!S.id){const t=`<span class="m">${E(S.ph||"TBD")}</span>`;return adm&&S.src?lnk(t):t}
+  const lab=S.src&&S.ph?`<span class="m sdsd">${E(S.ph)}${S.manual?" · set by you":""}</span>`:"";
+  return sdNm(se,S.id)+lab+(adm&&S.src?`<span class="sgch">${lnk("change")}</span>`:"")};
+function sgBox(se,x,si,mi,adm){
+  const cfg=se.cfg,can=!x.bye&&x.A.id&&x.B.id,played=can&&(x.st==="done"||x.st==="live"),t=x.t;
+  const chip=x.st==="bye"?`<span class="chip pending">BYE</span>`:x.st==="done"?`<span class="chip verified">FINAL</span>`:x.st==="live"?`<span class="chip lv">LIVE</span>`:`<span class="vs">VS${adm&&can?" ✎":""}</span>`;
+  const side=(S,k)=>{const win=x.win&&S.id===x.win,pen=cfg.allowDraw&&t&&t.winner==="DRAW"&&x.m.shootoutWinner===(k==="a"?"A":"B");
+    return `<div class="side sdrow${win?" sdwin":""}"><span class="sdn">${sgSlotH(se,S,`m:${si}:${mi}:${k}`,adm)}</span>${played?`<span class="sdg">${sdCells(se,x.m.games,k)}${!cfg.allowDraw&&t?`<b>${k==="a"?t.winsA:t.winsB}</b>`:""}${pen?`<em class="sdp">pens</em>`:""}</span>`:""}</div>`};
+  const act=adm&&can;
+  return `<div class="mt${act?" sdadm":""}"${act?` data-act="sded" data-id="s:${si}:${mi}" tabindex="0" role="button" title="Enter score"`:""}><div class="n"><span>M${mi+1}</span>${chip}</div>${side(x.A,"a")}${side(x.B,"b")}</div>`;
+}
+function sgFx(se,x,si,gi,fi,adm){
+  const cfg=se.cfg,gm=x.f.games||[],t=x.t,nm=S=>S.id?E(sdPlain(se,S.id)):`<span class="m">${E(S.ph||"TBD")}</span>`;
+  const sc=gm.filter(sdHas).map(q=>q.a+"-"+q.b).join(", "),w=t&&t.done&&t.winner!=="DRAW"?t.winner:"",act=adm&&x.ok;
+  const tail=sc?`<span class="sdsc">${E(sc)}${t&&t.done?(t.winner==="DRAW"?" (Draw)":!cfg.allowDraw?` (${t.winsA}-${t.winsB})`:""):" · live"}</span>`:act?`<span class="m">✎</span>`:"";
+  return `<div class="sdfx${act?" sdadm":""}"${act?` data-act="sded" data-id="x:${si}:${gi}:${fi}" tabindex="0" role="button" title="Enter score"`:""}><span><span class="${w==="A"?"sdwn":""}">${nm(x.A)}</span> <span class="m">vs</span> <span class="${w==="B"?"sdwn":""}">${nm(x.B)}</span></span>${tail}</div>`;
+}
+function sgStand(se,gm,adv){
+  if(!gm.any||!gm.rows.length)return "";
+  const cfg=se.cfg,dr=!!cfg.allowDraw,pd=!cfg.hidePointColumns;
+  return `<div class="m" style="margin-top:10px">Standings</div><div class="wrap"><table class="sdst"><thead><tr><th>#</th><th></th><th>P</th><th>W</th>${dr?"<th>D</th>":""}<th>L</th><th>Pts</th>${pd?"<th>PD</th>":""}</tr></thead><tbody>${gm.rows.map((r,k)=>`<tr class="${k<adv?"sdq":""}"><td>${k+1}</td><td>${E(sdPlain(se,r.teamId))}</td><td>${r.played}</td><td>${r.wins}</td>${dr?`<td>${r.draws}</td>`:""}<td>${r.losses}</td><td>${r.leaguePoints}</td>${pd?`<td>${r.pointDiff>0?"+":""}${r.pointDiff}</td>`:""}</tr>`).join("")}</tbody></table></div>`;
+}
+function sgGroupCard(se,s,si,gm,gi,adm){
+  const g=s.groups[gi],adv=(s.t==="rr"?s.out:s.q)||0,mds=[...new Set(gm.fx.map(x=>x.f.md))].sort((a,b)=>a-b);
+  return `<div class="card"><h3 style="color:var(--gold2)">${E(g.name)}</h3>${gm.mem.map((S,k)=>`<div>${sgSlotH(se,S,`g:${si}:${gi}:${k}`,adm)}</div>`).join("")}${gm.dup?`<div class="note" style="margin-top:8px">The same player appears twice in this group, so the table cannot be worked out. Change one of the places.</div>`:""}${mds.map(md=>`<div class="m" style="margin-top:10px">Matchday ${md+1}</div>${gm.fx.map((x,fi)=>({x,fi})).filter(o=>o.x.f.md===md).map(o=>sgFx(se,o.x,si,gi,o.fi,adm)).join("")}`).join("")}${sgStand(se,gm,adv)}</div>`;
+}
+function sgHTML(se){
+  const adm=!!SC.canEdit,{M}=sgCalc(se,false),st=se.stg.stages,n=(se.teams||[]).filter(t=>!t.placeholder).length;
+  let tot=0,done=0;
+  M.forEach(s=>{s.matches.forEach(x=>{if(!x.bye){tot++;if(x.st==="done")done++}});s.groups.forEach(g=>g.fx.forEach(f=>{tot++;if(f.st==="done")done++}))});
+  let h=`<div class="card"><h3>Custom stage plan</h3><div class="m">${n} entrants · ${st.length} stage${st.length>1?"s":""} · ${done} of ${tot} matches played${adm?" · tap a match to enter its score, or a place name to set who fills it":""}</div></div>`;
+  let i=0;
+  while(i<st.length){const s=st[i];
+    if(s.matches){const run=[];while(i<st.length&&st[i].matches){run.push(i);i++}
+      h+=`<h3>${run.length>1?"Knockout bracket":E(st[run[0]].name)}</h3>`+run.filter(si=>st[si].rule).map(si=>`<p class="m">${E(st[si].name)}: ${E(st[si].rule)}</p>`).join("")+
+        `<div class="card"><div class="br">${run.map(si=>`<div class="rdw"><h4>${E(st[si].name)}</h4><div class="rd">${M[si].matches.map((x,mi)=>sgBox(se,x,si,mi,adm)).join("")}</div></div>`).join("")}</div></div>`;
+      continue}
+    h+=`<h3>${E(s.name)}</h3><div class="m" style="margin-bottom:8px">${s.in} entrants → ${s.final?"the winner is decided here":s.out+" qualify"}${s.note?" · "+E(s.note):""}</div>${s.rule?`<p class="m">${E(s.rule)}</p>`:""}<div class="grid">${M[i].groups.map((g,gi)=>sgGroupCard(se,s,i,g,gi,adm)).join("")}</div>`;
+    i++}
+  return h;
+}
+
+// ----- score editor: the same one, opened for a staged match -----
+function sgOpenEd(id,se,tg){
+  const c=sgCalc(se,false),st=se.stg.stages[tg.si];let nameA,nameB,title,games,shoot=null,isKO=false;
+  if(tg.kind==="s"){const x=c.M[tg.si].matches[tg.mi];if(x.bye||!x.A.id||!x.B.id)return;nameA=sdPlain(se,x.A.id);nameB=sdPlain(se,x.B.id);title=`M${tg.mi+1} · ${st.name}`;games=x.m.games||[];shoot=x.m.shootoutWinner||null;isKO=true}
+  else{const x=c.M[tg.si].groups[tg.gi].fx[tg.fi];if(!x.ok)return;nameA=sdPlain(se,x.A.id);nameB=sdPlain(se,x.B.id);title=`${tg.g.name} · Matchday ${x.f.md+1} · ${st.name}`;games=x.f.games||[]}
+  SD.ed={id,isKO,nameA,nameB,title,shoot,games:(games.length?games:[{a:"",b:""}]).map(q=>({a:String(q.a==null?"":q.a),b:String(q.b==null?"":q.b)}))};
+  sdPaint();
+}
+
+// ----- setting a name by hand (best losers and any other exception) -----
+function sgOvTarget(se,id){
+  const p=String(id).split(":");
+  if(p[0]==="m"){const st=se.stg.stages[+p[1]],m=st&&st.matches&&st.matches[+p[2]];return m?{slot:m[p[3]==="b"?"b":"a"],si:+p[1],mi:+p[2],side:p[3]==="b"?"b":"a"}:null}
+  if(p[0]==="g"){const st=se.stg.stages[+p[1]],g=st&&st.groups&&st.groups[+p[2]],s=g&&g.members[+p[3]];return s?{slot:s,si:+p[1],gi:+p[2],idx:+p[3]}:null}
+  return null}
+function sgOvOpen(id){
+  if(!SC.canEdit)return;const se=sdCur();if(!se||!se.stg)return;const tg=sgOvTarget(se,id);
+  if(!tg||tg.slot.k==="p"||tg.slot.k==="bye")return;
+  SD.ed=null;sdPaint();SD.ov={id,label:tg.slot.l||"this place",cur:tg.slot.ov||"",bl:tg.slot.k==="bl"};sgOvPaint();
+}
+function sgOvPaint(){
+  const s=SD.ov,se=sdCur();let o=$("#sgm");
+  if(!s||!se){if(o)o.remove();return}
+  if(!o){o=document.createElement("div");o.id="sgm";o.setAttribute("role","dialog");o.setAttribute("aria-modal","true");document.body.appendChild(o)}
+  const teams=(se.teams||[]).filter(t=>!t.placeholder).slice().sort((a,b)=>String(a.name).localeCompare(String(b.name)));
+  o.innerHTML=`<div class="bd" data-act="sgovx"></div><div class="sdbox"><h3>Who fills this place?</h3><div class="sdvs">${E(s.label)}</div><p class="m" style="margin:0 0 8px">${s.bl?"Best losers are not worked out by the portal. Pick the name.":"Leave it on Automatic to let the portal fill it from the results, or pick a name yourself."}</p><select id="sgovsel"><option value="">${s.bl?"Not set yet":"Automatic (from the results)"}</option>${teams.map(t=>`<option value="${E(t.id)}" ${t.id===s.cur?"selected":""}>${sdNmPlain(se,t)}</option>`).join("")}</select><div id="sgerr" style="margin-top:8px;color:var(--red2);min-height:18px"></div><div class="sdbtns"><button class="g" data-act="sgovsave">Save</button><button class="o" data-act="sgovx">Cancel</button></div></div>`;
+  const i=o.querySelector("select");if(i)i.focus();
+}
+const sdNmPlain=(se,t)=>{const p=(se.players||[]).find(x=>x.id===(t.playerIds||[])[0]),c=p&&p.club;return E(t.name+(c?" ("+c+")":""))};
+function sgOvSave(){
+  const s=SD.ov,se=sdCur();if(!s||!se||!SC.canEdit)return;const v=($("#sgovsel")||{}).value||"",stg=JSON.parse(JSON.stringify(se.stg)),tg=sgOvTarget({...se,stg},s.id);
+  if(!tg){SD.ov=null;sgOvPaint();return}
+  if(v){ // the same player cannot fill two places in one match or one group
+    const cur=sgCalc({...se,stg},false).M[tg.si],others=tg.mi!=null?[cur.matches[tg.mi][tg.side==="a"?"B":"A"]]:cur.groups[tg.gi].mem.filter((_,k)=>k!==tg.idx);
+    if(others.some(o=>o.id===v)){const e=$("#sgerr");if(e)e.textContent=tg.mi!=null?"That player is already in this match.":"That player is already in this group.";return}}
+  if(v)tg.slot.ov=v;else delete tg.slot.ov;
+  const f=sgFix({...se,stg});
+  if(f.cleared&&!confirm(`This changes who plays in ${f.cleared} match${f.cleared>1?"es":""} that already ${f.cleared>1?"have scores":"has a score"}. Those scores will be cleared. Continue?`))return;
+  SD.ov=null;sgOvPaint();
+  SC.bridge.setEvents(p=>p.map(x=>x.id===se.id?f.se:x));toast("Saved");
+}
+Object.assign(A,{sgov(id){sgOvOpen(id)},sgovx(){SD.ov=null;sgOvPaint()},sgovsave(){sgOvSave()}});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&SD.ov){SD.ov=null;sgOvPaint()}});
 
 Object.assign(A,{deladmin(id){if(confirm("Remove admin access?"))setRole(id,"viewer")}});
 Object.assign(F,{
@@ -2770,7 +3023,7 @@ Object.assign(F,{
     }
     if(!rows.length)return toast("Add at least one sport with one discipline.");
     if(chk(await sb.from("events").insert(rows))){toast(`Created ${un}: ${new Set(rows.map(r=>r.group_key)).size} sport(s), ${rows.length} discipline(s)`);
-      UMB.name="";UMB.venue="";UMB.fee="0";UMB.sports=[umbSport(0)];BN.c={};HERO.c={};render()}
+      UMB.name="";UMB.venue="";UMB.fee="0";UMB.sports=[umbSport(0)];BN.c={};BN.pc={};HERO.c={};render()}
   }
 });
 Object.assign(A,{
