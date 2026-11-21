@@ -319,6 +319,13 @@ main.anim .grid>:nth-child(5){animation-delay:.24s}main.anim .grid>:nth-child(6)
 .bprev .hp{margin-top:0;max-height:none;overflow:visible;max-width:none;display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,340px));align-items:start}
 .pick.bp .chk{align-items:baseline}
 @media(max-width:700px){.hp{flex-basis:100%;max-width:none;max-height:none}}
+.hrow .cd{flex:1 1 440px;max-width:640px;margin-top:22px}
+.hrow .hp{margin-top:22px}
+.hc-up.act{color:var(--red2);border-color:var(--red2)}
+.hp .hc-s.act{background:linear-gradient(90deg,rgba(255,58,85,.16),rgba(0,0,0,.58) 72%)}
+.actr{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:12px 0;border-top:1px solid var(--line)}
+.actr.past{opacity:.6}.actr>div:nth-child(2){flex:1 1 220px;min-width:0}.actr .rmic{color:var(--gold2);display:inline-flex}.actr .rmic svg{width:20px;height:20px}
+.actd{flex:1 0 100%}
 </style>
 </head>
 <body>
@@ -1045,7 +1052,7 @@ const fmtExtras=v=>{const l=fmtLine(v.format_config);
 const unitKey=v=>v.umbrella_key||v.group_key||("e"+v.id);
 const unitFee=items=>{const u=items.find(x=>x.umbrella_fee!=null);return u?+u.umbrella_fee:Math.max(0,...items.map(x=>+x.fee||0))};
 // ---------- event banner: live and upcoming events in a carousel ----------
-const BN={c:{},pc:{},i:0,t:0,p:0,hold:false,sig:"",psig:""};
+const BN={c:{},pc:{},ac:{},i:0,t:0,p:0,hold:false,sig:"",psig:""};
 const IST="Asia/Kolkata";
 const bnWhen=ts=>new Date(ts).toLocaleString("en-IN",{timeZone:IST,weekday:"short",day:"numeric",month:"short",hour:"numeric",minute:"2-digit",hour12:true});
 const bnLocal=ts=>ts?new Date(ts).toLocaleString("sv-SE",{timeZone:IST}).replace(" ","T").slice(0,16):"";
@@ -1076,21 +1083,22 @@ function bpUnits(rows){const g=new Map();
   return [...g.values()]}
 const bpDone=u=>!isNaN(u.en)&&Date.now()>=u.en;
 function bpItems(rows){return bpUnits(rows).filter(u=>u.posted&&!bpDone(u)).sort((a,b)=>(isNaN(a.s)-isNaN(b.s))||(a.s-b.s))}
-const bpCur=()=>{const c=S.ed&&S.ed.is_active&&BN.pc[S.ed.id];return c?bpItems(c.d).filter(x=>!(!isNaN(x.s)&&Date.now()>=x.s)):[]}
+const bpOrd=(a,b)=>(isNaN(a.s)-isNaN(b.s))||(a.s-b.s);
+const bpCur=()=>{const c=S.ed&&S.ed.is_active&&BN.pc[S.ed.id],ev=c?bpItems(c.d).filter(x=>!(!isNaN(x.s)&&Date.now()>=x.s)):[];return [...ev,...acItems()].sort(bpOrd)}
 const bpSig=a=>a.map(x=>x.id+"|"+(isNaN(x.s)?"":x.s)+"|"+x.name+"|"+x.venue).join();
-function bpSlide(it){const sp=it.umb?{c:"#d9a521",i:TROPHY[3]}:sportOf(it.sport),has=!isNaN(it.s);
+function bpSlideEv(it){const sp=it.umb?{c:"#d9a521",i:TROPHY[3]}:sportOf(it.sport),has=!isNaN(it.s);
   return `<div class="hc-s" style="--acc:${sp.c}" data-act="hcgo" data-id="${E(it.id)}"><div class="hc-top"><span class="hc-up">UPCOMING</span><span class="hc-ic">${sp.i}</span></div>
   <div class="hc-nm">${E(it.name)}</div><div class="hc-meta">${has?E(bnWhen(it.s)):"Date to be announced"}${it.venue?" · "+E(it.venue):""}</div>
   ${has?`<div class="hc-cd" data-s="${it.s}" data-l="0">${bnCountdown(it.s,false)}</div>`:""}</div>`}
 const bpHTML=()=>{const it=bpCur();return it.length?`<div class="hp" id="hp" aria-label="Upcoming events">${it.map(bpSlide).join("")}</div>`:""};
-function hrowHTML(){const c=bnHTML(),p=bpHTML();BN.sig=bnSig(bnCur());BN.psig=bpSig(bpCur());return c||p?`<div class="hrow">${c}${p}</div>`:""}
+function hrowHTML(){const c=bnHTML(),p=bpHTML(),cdOn=S.tab==="ev"&&S.player&&S.ed&&S.ed.is_active&&heroStart()&&!bnCur().length,l=c||(cdOn?`<div class="cd" id="cd"></div>`:"");BN.sig=bnSig(bnCur());BN.psig=bpSig(bpCur());return l||p?`<div class="hrow">${l}${p}</div>`:""}
 async function bpLoad(){const ed=S.ed;if(!ed||!ed.is_active)return;
   const c=BN.pc[ed.id];if(c&&Date.now()-c.at<60000)return;
   const r=await sb.from("events").select("id,name,starts_at,ends_at,venue,umbrella_key,umbrella_name,group_key,group_name,on_banner").eq("edition_id",ed.id).eq("on_banner",true);
   if(r.error)return; // the banner column is not in the database yet
   BN.pc[ed.id]={at:Date.now(),d:r.data||[]}}
 // organiser tools, in the event creation section: choose what is posted, and see it as it will look
-const bpPreview=()=>{const it=bpItems(EV.list).filter(x=>isNaN(x.s)||Date.now()<x.s);
+const bpPreview=()=>{const it=[...bpItems(EV.list).filter(x=>isNaN(x.s)||Date.now()<x.s),...acItems()].sort(bpOrd);
   return it.length?it.map(bpSlide).join(""):`<p class="m" style="margin:0">Nothing posted yet. Tick an event above to announce it.</p>`};
 function bpCard(items){const us=bpUnits(items);
   return `<h3 style="margin-top:24px">Upcoming events on the banner</h3><div class="card" id="bpcard"><p class="m">Tick the events you want to announce to the right of the countdown. They appear in the same format as the countdown. Give an event a schedule to show a live countdown; without one the card says the date will be announced.</p>
@@ -1118,7 +1126,8 @@ function bnPaint(){const hero=$(".hero .in");if(!hero)return;
   const h=hrowHTML(),old=$(".hrow");
   if(!h){if(old)old.remove();return}
   if(old)old.outerHTML=h;else{const t=hero.querySelector("h1");if(t)t.insertAdjacentHTML("afterend",h)}
-  if(bnCur().length){const cd=$("#cd");if(cd)cd.remove()}} // the carousel takes over from the single tournament countdown
+  if(bnCur().length){const cd=$("#cd");if(cd)cd.remove()}
+  if($("#cd")){clearInterval(HERO.t);heroTick();HERO.t=setInterval(heroTick,1000)}} // the carousel takes over from the single tournament countdown
 function bnTick(){const els=document.querySelectorAll("#hc .hc-cd, .hp .hc-cd");if(!els.length&&!BN.psig&&!BN.sig)return;
   els.forEach(el=>{el.innerHTML=bnCountdown(+el.dataset.s,el.dataset.l==="1")});
   if(bnSig(bnCur())!==BN.sig||bpSig(bpCur())!==BN.psig)bnPaint()}
@@ -1129,7 +1138,7 @@ async function bnLoad(){const ed=S.ed;if(!ed||!ed.is_active)return;
   BN.c[ed.id]={at:Date.now(),d:r.data||[]}}
 async function bnInit(){
   if(!BN.t){BN.t=setInterval(bnTick,1000);BN.p=setInterval(()=>{if(!BN.hold&&!document.hidden&&!reduced()&&bnCur().length>1)bnGo(BN.i+1)},6000)}
-  await bnLoad();await bpLoad();const want=bnSig(bnCur())+"#"+bpSig(bpCur());
+  await bnLoad();await bpLoad();await acLoad();const want=bnSig(bnCur())+"#"+bpSig(bpCur());
   if(want!==(($(".hrow")?BN.sig:"")+"#"+($(".hrow")?BN.psig:"")))bnPaint()}
 document.addEventListener("mouseover",e=>{if(e.target.closest&&e.target.closest("#hc"))BN.hold=true});
 document.addEventListener("mouseout",e=>{const r=e.relatedTarget;if(e.target.closest&&e.target.closest("#hc")&&!(r&&r.closest&&r.closest("#hc")))BN.hold=false});
@@ -1148,7 +1157,6 @@ function heroHTML(){
   const tag=ed?`<div class="tag">${on?`<span class="live"><i></i>LIVE</span>`:`<span>Archive</span>`}<span>${E(ed.name)}</span></div>`:"";
   return `<section class="hero${full?"":" sm"}"><div class="in">${tag}<h1>Terrace <b>Cup</b>${ed&&ed.year?`<span class="yr">${E(ed.year)}</span>`:""}</h1>
   ${on?hrowHTML():""}
-  ${full&&on&&heroStart()&&!bnCur().length?`<div class="cd" id="cd"></div>`:""}
   ${full&&ed?`<div class="cnt" id="cnt"><div><b data-cu="events">0</b><span>Events</span></div><div><b data-cu="players">0</b><span>Players</span></div><div><b data-cu="entries">0</b><span>Entries</span></div></div>`:""}</div></section>`;
 }
 function heroTick(){
@@ -1389,7 +1397,7 @@ V.ev=async()=>{
     <div data-k="doubles both" style="display:none"><h4 style="margin:14px 0 4px">Doubles</h4>${fmtFields({unit:"pairs"},"d_")}</div>
     <div data-k="team" style="display:none"><h4 style="margin:14px 0 4px">Teams</h4><p class="m">Players register one by one and are placed into teams at the auction.</p>${fmtFields({unit:"teams"},"t_")}</div>
     <button class="g">Add event</button></form>`}`;
-    h+=bpCard(items);
+    await acLoad(true);h+=bpCard(items)+actCard();
     const pls=await sb.from("players").select("id,full_name,phone").order("full_name");
     h+=`<h3 style="margin-top:24px">Add a player to an event</h3><form class="card" data-f="addplayer"><p class="m">For people who are not registering on the portal. The entry is marked verified straight away.</p>
     <div class="g2"><div><label>Event and disciplines</label><div class="pick">${[...new Set(items.map(unitKey))].map(k=>{const rs=items.filter(x=>unitKey(x)===k);return rs.length>1||rs[0].umbrella_key?`<div class="m" style="margin-top:6px"><b>${E(rs[0].umbrella_name||rs[0].group_name||rs[0].name)}</b></div>`+rs.map(v=>`<label class="chk"><input type="checkbox" name="event_ids" value="${v.id}"> ${E(v.name)}</label>`).join(""):`<label class="chk"><input type="checkbox" name="event_ids" value="${rs[0].id}"> ${E(rs[0].name)}</label>`}).join("")}</div></div>
@@ -3051,6 +3059,47 @@ document.addEventListener("input",e=>{const fm=e.target.closest&&e.target.closes
     const k=fd.get("kind");if(k)fm.querySelectorAll("[data-k]").forEach(x=>x.style.display=x.dataset.k.split(" ").includes(k)?"":"none");return}
   if(e.target.dataset.filt!=="mem")return;const q=e.target.value.trim().toLowerCase();
   document.querySelectorAll("[data-mem-row]").forEach(r=>r.style.display=r.dataset.memRow.includes(q)?"":"none")});
+// ---------- activity notifications: pre-event happenings (auction, practice session ...) posted to the banner ----------
+// An activity is only a notice with a time. It is not a sports event and has no registration or draw.
+const ACT_PRESETS=["Mock auction","Actual auction","Team draw","Practice session","Captains’ meeting","Registration deadline","Fixtures release","Opening ceremony"];
+function actIcon(l){const t=(l||"").toLowerCase(),p=/auction/.test(t)?'<path d="M14 4l6 6-3 3-6-6zM11 7l-7 7 3 3 7-7M3 21h10"/>':/draw/.test(t)?'<path d="M3 5h5v5H3zM3 14h5v5H3zM16 9.5h5v5h-5zM8 7.5h4v9H8M12 12h4"/>':/practice|train|trial|warm/.test(t)?'<circle cx="12" cy="13" r="7"/><path d="M12 9v4l2 2M9 3h6"/>':/regist|deadline|sign/.test(t)?'<path d="M9 4h6l1 2h3v15H5V6h3zM9 12h6M9 16h4"/>':/meet|brief|captain/.test(t)?'<circle cx="9" cy="8" r="3.5"/><path d="M2 20c0-3.9 3.1-7 7-7s7 3.1 7 7M16 4.5a3.5 3.5 0 010 7M18 14c2.4.8 4 3.1 4 6"/>':/ceremon|open|inaug/.test(t)?'<path d="M5 21V4M5 4h13l-3 4 3 4H5"/>':/fixture|schedule|release/.test(t)?'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>':'<path d="M6 16V11a6 6 0 1112 0v5l2 2H4zM10 20a2 2 0 004 0"/>';
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`}
+const acItems=()=>{const c=S.ed&&S.ed.is_active&&BN.ac[S.ed.id];return c?c.d.map(a=>({id:"act"+a.id,act:true,name:a.title,s:Date.parse(a.starts_at),en:NaN,venue:a.note||"",posted:true})).filter(x=>!isNaN(x.s)&&x.s>Date.now()):[]};
+const acSlide=it=>`<div class="hc-s act" style="--acc:#ff3a55"><div class="hc-top"><span class="hc-up act">ACTIVITY</span><span class="hc-ic">${actIcon(it.name)}</span></div>
+  <div class="hc-nm">${E(it.name)}</div><div class="hc-meta">${E(bnWhen(it.s))}${it.venue?" · "+E(it.venue):""}</div>
+  <div class="hc-cd" data-s="${it.s}" data-l="0">${bnCountdown(it.s,false)}</div></div>`;
+function bpSlide(it){return it.act?acSlide(it):bpSlideEv(it)}
+async function acLoad(force){const ed=S.ed;if(!ed||!ed.is_active)return;const c=BN.ac[ed.id];if(!force&&c&&Date.now()-c.at<60000)return;
+  const r=await sb.from("activities").select("*").eq("edition_id",ed.id).order("starts_at");
+  BN.ac[ed.id]={at:Date.now(),d:r.error?[]:(r.data||[]),err:r.error?r.error.message:""}}
+function actCard(){const c=BN.ac[S.ed.id]||{d:[],err:""},now=Date.now(),head=`<h3 style="margin-top:24px">Activity notifications</h3>`;
+  if(c.err)return head+`<div class="note">Activity notifications are not set up yet (${E(c.err)}). Run activities.sql in the Supabase SQL editor, then reload.</div>`;
+  const fields=a=>`<div class="g2"><div><label>Activity</label><input name="title" list="actlist" required placeholder="e.g. Mock auction" value="${E(a?a.title:"")}"></div>
+    <div><label>Date and time (India time)</label><input type="datetime-local" name="when" required value="${a?E(bnLocal(a.starts_at)):""}"></div></div>
+    <label>Note (optional)</label><input name="note" placeholder="Where it happens, or anything people should know" value="${E(a?a.note||"":"")}">`;
+  return head+`<div class="card"><p class="m">Post a notice about something that happens before the event, such as an auction or a practice session. It appears in the banner, to the right of the countdown, until its time comes. An activity is only a notice: it is not a sports event.</p>
+  <form data-f="activity">${fields(null)}<datalist id="actlist">${ACT_PRESETS.map(p=>`<option value="${E(p)}">`).join("")}</datalist><button class="g">Post notification</button></form>
+  ${c.d.map(a=>{const past=Date.parse(a.starts_at)<=now;
+    return `<div class="actr${past?" past":""}"><span class="rmic">${actIcon(a.title)}</span><div><b>${E(a.title)}</b><div class="m">${E(bnWhen(a.starts_at))}${a.note?" · "+E(a.note):""}</div></div><span class="chip ${past?"rejected":"pending"}">${past?"Done":"Upcoming"}</span><button type="button" class="s d" data-act="actdel" data-id="${a.id}">Delete</button>
+    <details class="actd"><summary>Edit</summary><form data-f="activityedit"><input type="hidden" name="id" value="${a.id}">${fields(a)}<button class="g">Save changes</button></form></details></div>`}).join("")}</div>`}
+Object.assign(A,{
+  async actdel(id){if(!isAdm()||!live())return;if(!confirm("Delete this notification?"))return;
+    if(chk(await sb.from("activities").delete().eq("id",+id))){await acLoad(true);bnPaint();render()}}
+});
+Object.assign(F,{
+  async activity(fd){if(!isAdm()||!live())return;
+    const title=(fd.get("title")||"").trim(),when=fd.get("when"),note=(fd.get("note")||"").trim();
+    if(!title)return toast("Name the activity.");if(!when)return toast("Pick a date and time.");
+    const at=bnIso(when);if(Date.parse(at)<=Date.now())return toast("That time has already passed. Pick a time in the future.");
+    if(!chk(await sb.from("activities").insert({edition_id:S.ed.id,title,starts_at:at,note:note||null,created_by:S.user.id})))return;
+    await acLoad(true);toast("Posted on the banner");render()},
+  async activityedit(fd){if(!isAdm()||!live())return;
+    const id=+fd.get("id"),title=(fd.get("title")||"").trim(),when=fd.get("when"),note=(fd.get("note")||"").trim();
+    if(!title)return toast("Name the activity.");if(!when)return toast("Pick a date and time.");
+    if(!chk(await sb.from("activities").update({title,starts_at:bnIso(when),note:note||null}).eq("id",id)))return;
+    await acLoad(true);toast("Saved");render()}
+});
+
 document.addEventListener("submit",async e=>{const f=e.target.dataset.f;if(!f)return;e.preventDefault();const b=e.submitter||e.target.querySelector("button");if(b)b.disabled=true;
   try{await F[f](new FormData(e.target))}catch(err){toast(err.message)}finally{if(b)b.disabled=false}});
 document.addEventListener("click",e=>{
